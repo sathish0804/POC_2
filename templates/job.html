@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Processing...</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+    <style>
+      main { max-width: 720px; margin: 3rem auto; }
+      .progress { height: 1rem; background: #eee; border-radius: 999px; overflow: hidden; }
+      .bar { height: 100%; width: 0%; background: #0a84ff; transition: width 0.3s ease; }
+      .stats { display: flex; align-items: baseline; gap: .75rem; }
+      .muted { color: #666; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h3>Processing video...</h3>
+      <p class="muted">Job: <code>{{ job_id }}</code></p>
+      <div class="progress" aria-label="Progress" aria-valuemin="0" aria-valuemax="100">
+        <div class="bar" id="bar"></div>
+      </div>
+      <div class="stats">
+        <strong id="pct">0%</strong>
+        <span class="muted" id="counts">0 / 0 frames</span>
+      </div>
+      <p class="muted" id="note">Estimating total frames...</p>
+      <p><a href="{{ url_for('index') }}">Cancel and go back</a></p>
+    </main>
+    <script>
+      (function() {
+        const jobId = {{ job_id|tojson }};
+        const bar = document.getElementById('bar');
+        const pct = document.getElementById('pct');
+        const counts = document.getElementById('counts');
+        const note = document.getElementById('note');
+
+        function updateUI(processed, total) {
+          const denom = total > 0 ? total : Math.max(processed, 1);
+          const percent = Math.min(100, Math.round((processed / denom) * 100));
+          bar.style.width = percent + '%';
+          pct.textContent = percent + '%';
+          counts.textContent = processed + ' / ' + (total || '...') + ' frames';
+          note.textContent = total > 0 ? '' : 'Total frames not yet known';
+        }
+
+        async function poll() {
+          try {
+            const res = await fetch(`{{ url_for('progress', job_id='__ID__') }}`.replace('__ID__', jobId), { cache: 'no-store' });
+            if (!res.ok) throw new Error('status ' + res.status);
+            const data = await res.json();
+            updateUI(data.processed || 0, data.total || 0);
+            if (data.done) {
+              if (data.error) {
+                alert('Processing failed: ' + data.error);
+                window.location.href = '{{ url_for('index') }}';
+              } else {
+                window.location.href = `{{ url_for('results', job_id='__ID__') }}`.replace('__ID__', jobId);
+              }
+              return;
+            }
+          } catch (e) {
+            console.error('poll error', e);
+          }
+          setTimeout(poll, 1000);
+        }
+        poll();
+      })();
+    </script>
+  </body>
+  </html>
+
+

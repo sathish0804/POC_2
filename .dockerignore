@@ -1,0 +1,24 @@
+__pycache__
+*.py[cod]
+*.log
+.pytest_cache
+.mypy_cache
+.DS_Store
+.venv
+venv
+.env
+.idea
+.vscode
+dist
+build
+node_modules
+
+# Large local artifacts and datasets
+example_data/output
+output
+src/image.png
+
+# Git
+.git
+.gitignore
+

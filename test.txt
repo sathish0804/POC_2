@@ -1,0 +1,12 @@
+python main.py \
+  --video /Users/satishvanga/Documents/Vanga/POC_2/example_data/video_cfr.mp4 \
+  --model yolov8m.pt \
+  --fps 1 \
+  --out /Users/satishvanga/Documents/Vanga/POC_2/output/events.json \
+  --disable_ocr
+  --verbose
+
+
+
+
+uvicorn controllers.api:app --host 0.0.0.0 --port 8000 --reload

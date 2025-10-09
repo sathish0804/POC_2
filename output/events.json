@@ -1,0 +1,22 @@
+[
+  {
+    "tripId": "Demo",
+    "activityType": 6,
+    "des": "Calling signals",
+    "objectType": "calling signals",
+    "fileUrl": "/var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_tv25q5np/input.mp4",
+    "fileDuration": "00:27:50",
+    "activityStartTime": "20.16",
+    "crewName": "Sathish",
+    "crewId": "Vanga",
+    "crewRole": 1,
+    "date": "",
+    "time": "",
+    "filename": "input.mp4",
+    "peopleCount": 1,
+    "evidence": {
+      "rule": "hand_motion_near_body_edge"
+    }
+  }
+]
+
