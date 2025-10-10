@@ -217,12 +217,18 @@ class ActivityHeuristicTracker:
         if len(st["hand_centers"]) > 120:
             st["hand_centers"] = st["hand_centers"][-120:]
 
-        # Writing: repetitive small-range motion
+        # Writing: repetitive small-range motion constrained to lap-band region
         if len(st["hand_centers"]) >= 3:
             path = self._path_length(st["hand_centers"])  # pixels across whole buffer
             bx1, by1, bx2, by2 = self._bbox_of_points(st["hand_centers"])
             radius = max(bx2 - bx1, by2 - by1)
-            if path >= self.writing_min_path_px and radius <= self.writing_max_radius_px:
+            # Require the majority of points to lie within the lower portion of the person bbox (lap band)
+            px1, py1, px2, py2 = person_bbox
+            ph = max(1.0, py2 - py1)
+            lap_y1 = py1 + 0.60 * ph  # bottom 40%
+            pts_in_lap = sum(1 for (cx, cy) in st["hand_centers"] if cy >= lap_y1)
+            in_lap_ratio = pts_in_lap / float(len(st["hand_centers"]))
+            if path >= self.writing_min_path_px and radius <= self.writing_max_radius_px and in_lap_ratio >= 0.6:
                 st["writing_accum"] += 1.0  # ~1 sec per sampled frame
             else:
                 st["writing_accum"] = 0.0

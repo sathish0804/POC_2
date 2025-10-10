@@ -13,6 +13,9 @@ from utils.geometry import iou
 from utils.phone_logic import infer_phone_usage_from_landmarks
 from utils.annotate import annotate_and_save
 from utils.trackers import SimpleTracker, SleepTracker, ActivityHeuristicTracker
+from utils.eye_metrics import compute_ear, eye_open_probability
+from utils.sleep_decision import SleepDecisionMachine, SleepDecisionConfig
+from utils.debug_overlay import save_debug_overlay
 from utils.flag_utils import detect_green_flags
 from utils.window_utils import detect_window_regions
 from loguru import logger
@@ -42,6 +45,33 @@ class ActivityPipeline:
     phone_max_area_person_frac: float = 0.15
     phone_ar_min: float = 0.30
     phone_ar_max: float = 3.00
+    phone_min_conf: float = 0.50
+    # Glare/torch suppression for phone
+    phone_glare_v_thresh: int = 240
+    phone_glare_s_thresh: int = 60
+    phone_glare_frac_max: float = 0.35
+    phone_edge_density_min: float = 0.02
+    # Advanced sleep logic
+    use_advanced_sleep: bool = False
+    save_debug_overlays: bool = False
+    # Phone inference robustness
+    phone_hand_iou_min_frac: float = 0.15
+    phone_infer_min_face_frac: float = 0.02
+    phone_infer_suppress_head_down: bool = True
+    phone_infer_head_down_deg: float = 35.0
+    phone_infer_max_hand_y_frac: float = 0.65  # suppress if all hand points below this fraction of person height
+    # Packing detection config (scalable knobs)
+    pack_iou_overlap_thresh: float = 0.20   # 0.15–0.25
+    pack_window_s: float = 3.0              # seconds of sustained overlap
+    bag_min_score: float = 0.50
+    bag_area_frac_min: float = 0.01         # 1% of person area
+    bag_area_frac_max: float = 0.20         # 20% of person area
+    bag_torso_band_frac: float = 0.60       # torso band height fraction of person
+    # Writing detection config (scalable)
+    write_window_s: float = 3.0
+    write_min_path_px: float = 100.0
+    write_max_radius_px: float = 25.0
+    write_lap_band_frac: float = 0.40       # bottom 40% of person bbox
 
     def process_video(self, video_path: str, progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None) -> List[ActivityEvent]:
         if self.verbose:
@@ -69,7 +99,14 @@ class ActivityPipeline:
             micro_max_s=float(self.sleep_micro_max_min) * 60.0,
             min_duration_s=self.sleep_min_duration,
         )
-        act_tracker = ActivityHeuristicTracker()
+        act_tracker = ActivityHeuristicTracker(
+            writing_window_s=self.write_window_s,
+            writing_min_path_px=self.write_min_path_px,
+            writing_max_radius_px=self.write_max_radius_px,
+            packing_window_s=self.pack_window_s,
+            iou_overlap_thresh=self.pack_iou_overlap_thresh,
+        )
+        sleep_decider = SleepDecisionMachine(SleepDecisionConfig()) if self.use_advanced_sleep else None
 
         processed = 0
         # Estimate total sampled frames for progress reporting
@@ -230,9 +267,6 @@ class ActivityPipeline:
                         fx1, fy1, fx2, fy2 = float(min(xs)), float(min(ys)), float(max(xs)), float(max(ys))
                         face_bbox_crop = (fx1, fy1, fx2, fy2)
 
-                # Phone inference via ear/mouth proximity
-                inferred_phone, ev = infer_phone_usage_from_landmarks((0.0, 0.0, float(x2 - x1), float(y2 - y1)), face_bbox_crop, hands_list)
-
                 # Hand-object IoU (full-frame hands -> simplified via crop hands bbox)
                 # Derive crop hand bbox
                 hand_boxes_crop = []
@@ -259,6 +293,8 @@ class ActivityPipeline:
                     name = "phone" if cid == 67 else "other"
                     # If it's a phone, check proximity and hand overlap
                     if cid == 67:  # phone
+                        if float(score) < float(self.phone_min_conf):
+                            continue
                         # If phone box overlaps crop and passes size/shape sanity checks
                         ox1, oy1, ox2, oy2 = ob
                         pw = max(1.0, float(x2 - x1)); ph = max(1.0, float(y2 - y1))
@@ -270,6 +306,27 @@ class ActivityPipeline:
                         # Skip huge or very odd aspect "phones" (e.g., monitors)
                         if area_frac > self.phone_max_area_person_frac or ar < self.phone_ar_min or ar > self.phone_ar_max:
                             continue
+                        # Glare/torch suppression check on phone patch
+                        try:
+                            gx1 = max(0, int(ox1)); gy1 = max(0, int(oy1))
+                            gx2 = min(frame_bgr.shape[1] - 1, int(ox2)); gy2 = min(frame_bgr.shape[0] - 1, int(oy2))
+                            if gx2 > gx1 and gy2 > gy1:
+                                phone_patch = frame_bgr[gy1:gy2, gx1:gx2]
+                                hsv = cv2.cvtColor(phone_patch, cv2.COLOR_BGR2HSV)
+                                # bright and low saturation pixels -> specular/glare
+                                v = hsv[:, :, 2]
+                                s = hsv[:, :, 1]
+                                glare_mask = (v >= self.phone_glare_v_thresh) & (s <= self.phone_glare_s_thresh)
+                                glare_frac = float(glare_mask.sum()) / float(max(1, glare_mask.size))
+                                # edge density
+                                gray = cv2.cvtColor(phone_patch, cv2.COLOR_BGR2GRAY)
+                                edges = cv2.Canny(gray, 80, 160)
+                                edge_density = float((edges > 0).sum()) / float(max(1, edges.size))
+                                if glare_frac >= self.phone_glare_frac_max and edge_density < self.phone_edge_density_min:
+                                    # looks like torch/glare, skip
+                                    continue
+                        except Exception:
+                            pass
                         cx1, cy1, cx2, cy2 = float(x1), float(y1), float(x2), float(y2)
                         ix1, iy1 = max(cx1, ox1), max(cy1, oy1)
                         ix2, iy2 = min(cx2, ox2), min(cy2, oy2)
@@ -286,7 +343,8 @@ class ActivityPipeline:
                             inter_y2 = min(hy2, py2)
                             iw = max(0.0, inter_x2 - inter_x1)
                             ih = max(0.0, inter_y2 - inter_y1)
-                            if iw * ih > 0:
+                            inter_area = iw * ih
+                            if phone_area > 0 and (inter_area / phone_area) >= self.phone_hand_iou_min_frac:
                                 held_object = "cell phone"
                                 held_object_bbox = [ox1, oy1, ox2, oy2]
                                 break
@@ -323,10 +381,26 @@ class ActivityPipeline:
                         if flag_interaction_emitted:
                             break
 
-                # Build per-person activities (phone)
+                # Phone inference via ear/mouth proximity, with additional suppressions
+                inferred_phone, ev = infer_phone_usage_from_landmarks((0.0, 0.0, float(x2 - x1), float(y2 - y1)), face_bbox_crop, hands_list)
+                if inferred_phone:
+                    # Suppress when head is strongly down (likely operating/packing) or hands too low in the crop
+                    if (head_down_angle is not None) and (head_down_angle >= self.phone_infer_head_down_deg):
+                        inferred_phone = False
+                        ev = {"rule": "suppressed_head_down"}
+                    else:
+                        if hands_list:
+                            hand_ys = [float(p.get("y", 0.0)) for h in hands_list for p in h.values()]
+                            if hand_ys:
+                                max_hand_y = max(hand_ys)
+                                if (max_hand_y / max(1.0, float(y2 - y1))) > self.phone_infer_max_hand_y_frac:
+                                    inferred_phone = False
+                                    ev = {"rule": "suppressed_hands_low"}
+
+                # Build per-person activities (phone) — only if we have strong evidence
                 if held_object:
                     obj_name = held_object
-                    evidence = {"rule": "hand_object_intersection"}
+                    evidence = {"rule": "hand_object_intersection_frac"}
                     per_frame_activities.append({
                         "person_id": pid,
                         "person_bbox": [x1, y1, x2, y2],
@@ -348,11 +422,18 @@ class ActivityPipeline:
                         "evidence": evidence,
                         "track_id": track_id,
                     })
-                # Remove pure direct YOLO phone without evidence to reduce false positives
 
                 # Sleep tracking inputs
-                # Approximate eye openness via EAR already in classifier earlier; here we use FaceMesh proxy if available
-                eye_open = None
+                # Compute EAR and map to open probability
+                ear = None
+                open_prob = None
+                try:
+                    ear = compute_ear(face_res, (frame_bgr.shape[0], frame_bgr.shape[1]))
+                    open_prob = eye_open_probability(ear)
+                except Exception:
+                    ear = None
+                    open_prob = None
+
                 head_down_angle = None
                 if pose_res and pose_res.pose_landmarks:
                     lm = pose_res.pose_landmarks.landmark
@@ -379,27 +460,78 @@ class ActivityPipeline:
                         head_down_angle = ang(head_vec, torso_up)
                     except Exception:
                         head_down_angle = None
-                # For eye openness, reuse EAR from FaceMesh if desired; to keep scope, leave None here
+                # Head pitch in degrees; positive is head-down per our heuristic
 
                 engaged = any(a.get("person_id") == pid and a.get("object") == "cell phone" for a in per_frame_activities)
-                slevents = sleep_tracker.update(
-                    track_id=track_id,
-                    ts=float(ts),
-                    person_bbox=[x1, y1, x2, y2],
-                    eye_openness=eye_open,
-                    head_down_angle_deg=head_down_angle,
-                    engaged=engaged,
-                )
-                for sev in slevents:
-                    per_frame_activities.append({
-                        "person_id": pid,
-                        "person_bbox": [x1, y1, x2, y2],
-                        "object": sev.get("activity"),
-                        "object_bbox": None,
-                        "holding": False,
-                        "evidence": {"rule": sev.get("evidence_rule")},
-                        "track_id": track_id,
-                    })
+
+                debug_info = None
+                if self.use_advanced_sleep and sleep_decider is not None:
+                    # Use advanced decision machine
+                    nose_xy = None
+                    try:
+                        if pose_res and pose_res.pose_landmarks:
+                            lm = pose_res.pose_landmarks.landmark
+                            nose_xy = (lm[0].x * frame_bgr.shape[1], lm[0].y * frame_bgr.shape[0])
+                    except Exception:
+                        nose_xy = None
+                    emitted = sleep_decider.update(
+                        track_id=track_id,
+                        ts=float(ts),
+                        ear=ear,
+                        open_prob=open_prob,
+                        head_pitch_deg=head_down_angle,
+                        head_point_xy=nose_xy,
+                        engaged=engaged,
+                    )
+                    debug_info = sleep_decider.get_debug(track_id, float(ts))
+                    if emitted:
+                        per_frame_activities.append({
+                            "person_id": pid,
+                            "person_bbox": [x1, y1, x2, y2],
+                            "object": emitted.get("activity"),
+                            "object_bbox": None,
+                            "holding": False,
+                            "evidence": {"rule": emitted.get("evidence_rule")},
+                            "track_id": track_id,
+                        })
+                else:
+                    # Keep existing simple SleepTracker logic
+                    eye_open = open_prob if open_prob is not None else None
+                    slevents = sleep_tracker.update(
+                        track_id=track_id,
+                        ts=float(ts),
+                        person_bbox=[x1, y1, x2, y2],
+                        eye_openness=eye_open,
+                        head_down_angle_deg=head_down_angle,
+                        engaged=engaged,
+                    )
+                    for sev in slevents:
+                        per_frame_activities.append({
+                            "person_id": pid,
+                            "person_bbox": [x1, y1, x2, y2],
+                            "object": sev.get("activity"),
+                            "object_bbox": None,
+                            "holding": False,
+                            "evidence": {"rule": sev.get("evidence_rule")},
+                            "track_id": track_id,
+                        })
+
+                # Optional debug overlays saved to output/debug
+                if self.save_debug_overlays:
+                    lines = []
+                    lines.append(f"EAR: {ear:.3f}" if ear is not None else "EAR: None")
+                    lines.append(f"open_prob: {open_prob:.2f}" if open_prob is not None else "open_prob: None")
+                    lines.append(f"head_pitch_deg: {head_down_angle:.1f}" if head_down_angle is not None else "head_pitch_deg: None")
+                    if debug_info:
+                        lines.append(f"state: {debug_info.get('state')}")
+                        lines.append(f"closed_run_s: {debug_info.get('closed_run_s'):.2f}")
+                        lines.append(f"perclos_mw: {debug_info.get('perclos_mw'):.2f}")
+                        lines.append(f"low_motion_sw: {debug_info.get('low_motion_sw')}")
+                    tag_base = f"frame_{index:06d}_{ts:.2f}s"
+                    try:
+                        save_debug_overlay(frame_bgr, lines, tag=tag_base, out_dir=os.path.join(os.path.dirname(video_path), "output"))
+                    except Exception:
+                        pass
 
                 # Heuristic tracker for activities 4,5 (writing, packing)
                 # Build frame-space hand boxes for this person from crop-space boxes
@@ -407,12 +539,33 @@ class ActivityPipeline:
                 for hb in hand_boxes_crop:
                     hx1, hy1, hx2, hy2 = hb
                     hand_boxes_frame.append([hx1 + x1, hy1 + y1, hx2 + x1, hy2 + y1])
-                # Bag/object boxes from detections (non-person)
+                # Bag/object boxes from detections (non-person) with filtering per person context
                 bag_boxes_frame = []
+                # Person geometry
+                pw = max(1.0, float(x2 - x1)); ph = max(1.0, float(y2 - y1))
+                person_area = pw * ph
+                # Define torso/waist vertical band within the person box
+                torso_y1 = y1 + int(0.20 * ph)
+                torso_y2 = y1 + int(min(1.0, 0.20 + self.bag_torso_band_frac) * ph)
                 for (cid, score, ob) in objects:
-                    # very simple heuristic: assume 'bag' class id if available (commonly 24 for COCO backpack)
-                    if cid in (24, 26, 27):  # backpack, handbag, suitcase (COCO)
-                        bag_boxes_frame.append(list(ob))
+                    if cid not in (24, 26, 27):
+                        continue
+                    if float(score) < float(self.bag_min_score):
+                        continue
+                    if iou(pb, ob) <= 0.0:
+                        continue
+                    bx1, by1, bx2, by2 = ob
+                    ow = max(1.0, float(bx2 - bx1)); oh = max(1.0, float(by2 - by1))
+                    bag_area = ow * oh
+                    area_frac = bag_area / max(1.0, person_area)
+                    if not (self.bag_area_frac_min <= area_frac <= self.bag_area_frac_max):
+                        continue
+                    # Check if bag intersects torso band
+                    ib_y1 = max(by1, torso_y1)
+                    ib_y2 = min(by2, torso_y2)
+                    if (ib_y2 - ib_y1) <= 0:
+                        continue
+                    bag_boxes_frame.append([bx1, by1, bx2, by2])
                 # Prepare pose points (shoulders/wrists) in frame coords for extension check
                 pose_points = {}
                 if pose_res and pose_res.pose_landmarks:

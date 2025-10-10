@@ -71,10 +71,12 @@ def create_app() -> Flask:
                     crew_id="1",
                     crew_role=1,
                     yolo_weights="yolo11s.pt",
-                    sample_fps=1,
+                    sample_fps=3,
                     enable_ocr=False,
                     verbose=False,
-                    max_frames=0,
+                    max_frames=400,
+                    use_advanced_sleep=True,
+                    save_debug_overlays=True,
                 )
 
                 def _progress(ev: Dict[str, Any]):

@@ -73,8 +73,8 @@ Both endpoints return a JSON array of events using the same schema as `output/ev
 - API startup configures logging automatically. To enable verbose logs for a request, set `verbose=true` (form field) on `/process`.
 
 ## Activities
-1. Micro sleep (eyes closed >2s and head tilt forward)
-2. Sleeping (eyes closed >10s, head stationary)
+1. Micro sleep (eyes closed ≥2s with low motion) [advanced: sliding windows]
+2. Sleeping (high PERCLOS with stillness and head-down) [advanced]
 3. Using cell phone (hand-phone IoU > threshold)
 4. Writing while moving (hand motion near pen/notebook)
 5. Packing (hand overlaps bag frequently)
@@ -105,3 +105,13 @@ Both endpoints return a JSON array of events using the same schema as `output/ev
 - Class IDs for phone/bag/flag/pen are placeholders; adapt to your YOLO model `names`.
 - Temporal thresholds assume ~1 FPS sampling; they auto-adjust using timestamps but tune as needed.
 - Everything runs on CPU; for speed, consider disabling OCR with `--disable_ocr`.
+
+## Advanced sleep detection (optional)
+
+- Enable via `ActivityPipeline(use_advanced_sleep=True)`.
+- Computes EAR and a coarse eye-open probability, smooths with EWMA, and applies a sliding-window, hysteresis decision machine:
+  - Microsleep: continuous closure ≥ 2s with low head motion (short window)
+  - Drowsy: PERCLOS(mid window) > ~0.4
+  - Sleep: PERCLOS(mid window) > ~0.8 with stillness and head-down
+  - Recovery: sustained eye-open and neutral head pose
+- If landmarks are unreliable, logic degrades gracefully and avoids false alarms (may emit no sleep state).

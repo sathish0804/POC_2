@@ -40,6 +40,7 @@ if __name__ == "__main__":
     parser.add_argument("--disable_ocr", action="store_true", help="Disable OCR to speed up first run or avoid downloads")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose progress logging")
     parser.add_argument("--max_frames", type=int, default=0, help="Process only first N sampled frames (0=all)")
+    parser.add_argument("--use_advanced_sleep", action="store_true", help="Enable advanced sliding-window sleep detection")
     # Sleep thresholds
     parser.add_argument("--sleep_eye_thresh", type=float, default=0.18, help="Eye openness threshold (<= means closed)")
     parser.add_argument("--sleep_headdown_deg", type=float, default=100.0, help="Head-down angle threshold (deg)")
@@ -59,6 +60,7 @@ if __name__ == "__main__":
         enable_ocr=not args.disable_ocr,
         verbose=args.verbose,
         max_frames=args.max_frames,
+        use_advanced_sleep=args.use_advanced_sleep,
         sleep_eye_thresh=args.sleep_eye_thresh,
         sleep_headdown_deg=args.sleep_headdown_deg,
         sleep_micro_max_min=args.sleep_micro_max_min,
