@@ -14,6 +14,7 @@ easyocr==1.7.2
 fastapi==0.118.0
 filelock==3.19.1
 Flask==3.0.3
+gunicorn==21.2.0
 flatbuffers==25.9.23
 fonttools==4.60.0
 fsspec==2025.9.0

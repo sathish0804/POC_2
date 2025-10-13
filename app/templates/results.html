@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Results - Activity Detection</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+    <style>
+      main { max-width: 1200px; margin: 2rem auto; }
+      table { font-size: 0.95rem; }
+      th, td { white-space: nowrap; }
+      td.wrap { white-space: normal; max-width: 420px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h2>Events for Trip {{ trip_id }}</h2>
+      <a href="{{ url_for('ui.index') }}">← Back</a>
+      {% if events and events|length > 0 %}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:0.75rem 0 1rem;">
+        <small>Showing {{ (start + 1) if total > 0 else 0 }}–{{ end if end < total else total }} of {{ total }}</small>
+        <div style="display:flex;gap:0.5rem;align-items:center;">
+          {% if page > 1 %}
+            <a role="button" href="{{ url_for('ui.results', job_id=job_id, page=page-1, page_size=page_size) }}">Prev</a>
+          {% else %}
+            <button disabled>Prev</button>
+          {% endif %}
+          <small>Page {{ page }} / {{ total_pages }}</small>
+          {% if page < total_pages %}
+            <a role="button" href="{{ url_for('ui.results', job_id=job_id, page=page+1, page_size=page_size) }}">Next</a>
+          {% else %}
+            <button disabled>Next</button>
+          {% endif %}
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Media</th>
+            <th>activityType</th>
+            <th>des</th>
+            <th>objectType</th>
+            <th>activityStartTime</th>
+            <th>filename</th>
+            <th>fileDuration</th>
+            <th>crewName</th>
+            <th>crewId</th>
+            <th>crewRole</th>
+            <th>date</th>
+            <th>time</th>
+            <th>peopleCount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in events %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td>
+              {% if e["activityClip"] %}
+                <video controls preload="metadata" style="height:120px;width:auto;object-fit:cover;">
+                  <source src="{{ url_for('ui.media', job_id=job_id, filename=e['activityClip']) }}" type="video/mp4" />
+                  Your browser does not support the video tag.
+                </video>
+              {% elif e["activityImage"] %}
+                <a href="{{ url_for('ui.media', job_id=job_id, filename=e['activityImage']) }}" target="_blank" rel="noopener noreferrer" title="Open full image in new tab">
+                  <img src="{{ url_for('ui.media', job_id=job_id, filename=e['activityImage']) }}" alt="activity" style="height:64px;width:auto;object-fit:cover;" />
+                </a>
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </td>
+            <td>{{ e["activityType"] }}</td>
+            <td class="wrap">{{ e["des"] }}</td>
+            <td>{{ e["objectType"] }}</td>
+            <td>{{ e["activityStartTime"] }}</td>
+            <td>{{ e["filename"] }}</td>
+            <td>{{ e["fileDuration"] }}</td>
+            <td>{{ e["crewName"] }}</td>
+            <td>{{ e["crewId"] }}</td>
+            <td>{{ e["crewRole"] }}</td>
+            <td>{{ e["date"] }}</td>
+            <td>{{ e["time"] }}</td>
+            <td>{{ e["peopleCount"] }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <article>
+        <header>No events detected</header>
+        <p>We didn’t find any activities in this video for Trip {{ trip_id }}.</p>
+        <ul>
+          <li>Verify the video contains visible crew or activity.</li>
+          <li>Try a longer clip or clearer footage.</li>
+          <li>Increase sampling rate (contact admin to adjust settings).</li>
+        </ul>
+        <p><a href="{{ url_for('ui.index') }}">Try another video</a></p>
+      </article>
+      {% endif %}
+    </main>
+  </body>
+  </html>
+
+

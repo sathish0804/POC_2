@@ -42,9 +42,9 @@ RUN set -eux; \
 # Copy the rest of the project
 COPY . .
 
-# Default to Flask app served by the built-in server on 0.0.0.0:5000
-EXPOSE 5000
+# Serve with Gunicorn
+EXPOSE 8000
 
-CMD ["python", "flask_app.py"]
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "wsgi:app"]
 
 

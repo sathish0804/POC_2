@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Activity Detection UI</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+    <style>
+      main { max-width: 960px; margin: 2rem auto; }
+      .flash { color: #b00020; }
+      #loader { position: fixed; inset: 0; background: rgba(255,255,255,0.85); display: none; align-items: center; justify-content: center; gap: 1rem; z-index: 9999; }
+      .spinner { width: 2rem; height: 2rem; border: 3px solid #ddd; border-top-color: #0a84ff; border-radius: 50%; animation: spin 1s linear infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div style="display:flex;align-items:center;justify-content:center;margin-bottom:1.5rem;">
+        <img src="{{ url_for('static', filename='image.png') }}" alt="Logo" style="max-width: 80%; height: auto;" />
+      </div>
+      <h2 style="text-align:center;">Upload CVVR and Trip ID</h2>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+      <ul>
+        {% for category, message in messages %}
+        <li class="flash">{{ message }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% endwith %}
+      <form action="{{ url_for('ui.start') }}" method="post" enctype="multipart/form-data">
+        <label>
+          Trip ID
+          <input type="text" name="tripId" placeholder="e.g., TRIP-001" required />
+        </label>
+        <label>
+          CVVR File (MP4)
+          <input type="file" name="cvvrFile" accept="video/*" required />
+        </label>
+        <button type="submit">Process</button>
+      </form>
+    </main>
+    <div id="loader" aria-live="polite" aria-busy="true" role="status">
+      <div class="spinner" aria-hidden="true"></div>
+      <strong>Processing...</strong>
+    </div>
+    <script>
+      (function() {
+        const form = document.querySelector('form');
+        const loader = document.getElementById('loader');
+        if (form && loader) {
+          form.addEventListener('submit', function() {
+            loader.style.display = 'flex';
+          });
+        }
+      })();
+    </script>
+  </body>
+  </html>
+
+
