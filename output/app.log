@@ -353,3 +353,72 @@
 2025-10-13 14:28:54.096 | INFO     | __main__:start:49 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_p93glow_/input.mp4
 2025-10-13 14:29:01.010 | INFO     | controllers.pipeline:process_video:748 - [Pipeline] Processed 61 sampled frames from input.mp4 (sample_fps=1, duration=00:01:00)
 2025-10-13 14:29:01.032 | INFO     | __main__:_run_job:109 - [Flask] Persisted activity images to /Users/satishvanga/Documents/Vanga/POC_2/example_data/output/20251013_142901
+2025-10-13 14:30:05.358 | INFO     | __main__:start:49 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_evos130d/input.mp4
+2025-10-13 14:30:15.693 | INFO     | controllers.pipeline:process_video:748 - [Pipeline] Processed 65 sampled frames from input.mp4 (sample_fps=1, duration=00:01:04)
+2025-10-13 14:30:15.721 | INFO     | __main__:_run_job:109 - [Flask] Persisted activity images to /Users/satishvanga/Documents/Vanga/POC_2/example_data/output/20251013_143015
+2025-10-13 14:30:44.876 | INFO     | __main__:start:49 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_09kxv5jw/input.mp4
+2025-10-13 14:34:33.380 | INFO     | controllers.pipeline:process_video:748 - [Pipeline] Processed 1671 sampled frames from input.mp4 (sample_fps=1, duration=00:27:50)
+2025-10-13 14:34:35.035 | INFO     | __main__:_run_job:109 - [Flask] Persisted activity images to /Users/satishvanga/Documents/Vanga/POC_2/example_data/output/20251013_143433
+2025-10-13 14:39:14.348 | INFO     | __main__:create_app:27 - Flask UI startup. Logs at: /Users/satishvanga/Documents/Vanga/POC_2/output/app.log
+2025-10-13 14:40:51.995 | INFO     | __main__:start:49 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_nevh7l04/input.mp4
+2025-10-13 14:44:57.581 | INFO     | controllers.pipeline:process_video:748 - [Pipeline] Processed 1671 sampled frames from input.mp4 (sample_fps=1, duration=00:27:50)
+2025-10-13 14:44:59.272 | INFO     | __main__:_run_job:107 - [Flask] Persisted activity images to /Users/satishvanga/Documents/Vanga/POC_2/example_data/output/20251013_144457
+2025-10-13 14:44:59.272 | INFO     | __main__:_run_job:115 - [Flask] Found 59 events
+2025-10-13 14:57:47.416 | INFO     | __main__:create_app:27 - Flask UI startup. Logs at: /Users/satishvanga/Documents/Vanga/POC_2/output/app.log
+2025-10-13 14:58:11.793 | INFO     | __main__:start:49 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_kvzeowxp/input.mp4
+2025-10-13 15:01:52.901 | INFO     | controllers.pipeline:process_video:759 - [Pipeline] Processed 1671 sampled frames from input.mp4 (sample_fps=1, duration=00:27:50)
+2025-10-13 15:01:54.433 | INFO     | __main__:_run_job:107 - [Flask] Persisted activity images to /Users/satishvanga/Documents/Vanga/POC_2/example_data/output/20251013_150152
+2025-10-13 15:01:54.433 | INFO     | __main__:_run_job:115 - [Flask] Found 20 events
+2025-10-13 15:03:06.141 | INFO     | __main__:start:49 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_2wtf7bqh/input.mp4
+2025-10-13 15:03:18.351 | INFO     | controllers.pipeline:process_video:759 - [Pipeline] Processed 120 sampled frames from input.mp4 (sample_fps=1, duration=00:01:59)
+2025-10-13 15:03:18.385 | INFO     | __main__:_run_job:107 - [Flask] Persisted activity images to /Users/satishvanga/Documents/Vanga/POC_2/example_data/output/20251013_150318
+2025-10-13 15:03:18.385 | INFO     | __main__:_run_job:115 - [Flask] Found 5 events
+2025-10-13 15:03:39.035 | INFO     | __main__:start:49 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_4jkr6roq/input.mp4
+2025-10-13 15:03:45.279 | INFO     | controllers.pipeline:process_video:759 - [Pipeline] Processed 61 sampled frames from input.mp4 (sample_fps=1, duration=00:01:00)
+2025-10-13 15:03:45.301 | INFO     | __main__:_run_job:107 - [Flask] Persisted activity images to /Users/satishvanga/Documents/Vanga/POC_2/example_data/output/20251013_150345
+2025-10-13 15:03:45.301 | INFO     | __main__:_run_job:115 - [Flask] Found 0 events
+2025-10-13 15:03:54.059 | INFO     | __main__:start:49 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_beoufrtr/input.mp4
+2025-10-13 15:03:59.979 | INFO     | controllers.pipeline:process_video:759 - [Pipeline] Processed 61 sampled frames from input.mp4 (sample_fps=1, duration=00:01:00)
+2025-10-13 15:03:59.996 | INFO     | __main__:_run_job:107 - [Flask] Persisted activity images to /Users/satishvanga/Documents/Vanga/POC_2/example_data/output/20251013_150359
+2025-10-13 15:03:59.996 | INFO     | __main__:_run_job:115 - [Flask] Found 0 events
+2025-10-13 15:04:45.240 | INFO     | __main__:create_app:27 - Flask UI startup. Logs at: /Users/satishvanga/Documents/Vanga/POC_2/output/app.log
+2025-10-13 15:04:58.272 | INFO     | __main__:start:49 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_7tqd2rcz/input.mp4
+2025-10-13 15:05:04.416 | INFO     | controllers.pipeline:process_video:759 - [Pipeline] Processed 61 sampled frames from input.mp4 (sample_fps=1, duration=00:01:00)
+2025-10-13 15:05:04.442 | INFO     | __main__:_run_job:107 - [Flask] Persisted activity images to /Users/satishvanga/Documents/Vanga/POC_2/example_data/output/20251013_150504
+2025-10-13 15:05:04.442 | INFO     | __main__:_run_job:115 - [Flask] Found 0 events
+2025-10-13 15:05:55.953 | INFO     | __main__:create_app:27 - Flask UI startup. Logs at: /Users/satishvanga/Documents/Vanga/POC_2/output/app.log
+2025-10-13 15:06:03.707 | INFO     | __main__:start:49 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_uxbrpk5q/input.mp4
+2025-10-13 15:06:09.998 | INFO     | controllers.pipeline:process_video:759 - [Pipeline] Processed 61 sampled frames from input.mp4 (sample_fps=1, duration=00:01:00)
+2025-10-13 15:06:10.018 | INFO     | __main__:_run_job:107 - [Flask] Persisted activity images to /Users/satishvanga/Documents/Vanga/POC_2/example_data/output/20251013_150609
+2025-10-13 15:06:10.018 | INFO     | __main__:_run_job:115 - [Flask] Found 0 events
+2025-10-13 15:09:31.215 | INFO     | __main__:create_app:27 - Flask UI startup. Logs at: /Users/satishvanga/Documents/Vanga/POC_2/output/app.log
+2025-10-13 15:09:37.701 | INFO     | __main__:start:49 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_jezihg5y/input.mp4
+2025-10-13 15:09:43.859 | INFO     | controllers.pipeline:process_video:759 - [Pipeline] Processed 61 sampled frames from input.mp4 (sample_fps=1, duration=00:01:00)
+2025-10-13 15:09:43.878 | INFO     | __main__:_run_job:107 - [Flask] Persisted activity images to /Users/satishvanga/Documents/Vanga/POC_2/example_data/output/20251013_150943
+2025-10-13 15:09:43.878 | INFO     | __main__:_run_job:115 - [Flask] Found 0 events
+2025-10-13 15:15:55.977 | INFO     | __main__:create_app:27 - Flask UI startup. Logs at: /Users/satishvanga/Documents/Vanga/POC_2/output/app.log
+2025-10-13 15:16:02.413 | INFO     | __main__:start:49 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_c3wqh9ef/input.mp4
+2025-10-13 15:16:21.548 | INFO     | controllers.pipeline:process_video:785 - [Pipeline] Processed 61 sampled frames from input.mp4 (sample_fps=1, duration=00:01:00)
+2025-10-13 15:16:21.619 | INFO     | __main__:_run_job:107 - [Flask] Persisted activity images to /Users/satishvanga/Documents/Vanga/POC_2/example_data/output/20251013_151621
+2025-10-13 15:16:21.619 | INFO     | __main__:_run_job:115 - [Flask] Found 57 events
+2025-10-13 15:16:38.372 | INFO     | __main__:start:49 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_o7ht9qvj/input.mp4
+2025-10-13 15:16:48.329 | INFO     | controllers.pipeline:process_video:785 - [Pipeline] Processed 65 sampled frames from input.mp4 (sample_fps=1, duration=00:01:04)
+2025-10-13 15:16:48.357 | INFO     | __main__:_run_job:107 - [Flask] Persisted activity images to /Users/satishvanga/Documents/Vanga/POC_2/example_data/output/20251013_151648
+2025-10-13 15:16:48.357 | INFO     | __main__:_run_job:115 - [Flask] Found 5 events
+2025-10-13 15:17:03.686 | INFO     | __main__:start:49 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_xbfg7ljm/input.mp4
+2025-10-13 15:17:17.177 | INFO     | controllers.pipeline:process_video:785 - [Pipeline] Processed 120 sampled frames from input.mp4 (sample_fps=1, duration=00:01:59)
+2025-10-13 15:17:17.217 | INFO     | __main__:_run_job:107 - [Flask] Persisted activity images to /Users/satishvanga/Documents/Vanga/POC_2/example_data/output/20251013_151717
+2025-10-13 15:17:17.217 | INFO     | __main__:_run_job:115 - [Flask] Found 5 events
+2025-10-13 15:17:26.931 | INFO     | __main__:start:49 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_duo5wu_7/input.mp4
+2025-10-13 15:25:00.313 | INFO     | controllers.pipeline:process_video:785 - [Pipeline] Processed 1671 sampled frames from input.mp4 (sample_fps=1, duration=00:27:50)
+2025-10-13 15:25:02.294 | INFO     | __main__:_run_job:107 - [Flask] Persisted activity images to /Users/satishvanga/Documents/Vanga/POC_2/example_data/output/20251013_152500
+2025-10-13 15:25:02.294 | INFO     | __main__:_run_job:115 - [Flask] Found 883 events
+2025-10-13 15:32:03.996 | INFO     | __main__:create_app:27 - Flask UI startup. Logs at: /Users/satishvanga/Documents/Vanga/POC_2/output/app.log
+2025-10-13 15:32:25.921 | INFO     | __main__:start:49 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_2trwwb4j/input.mp4
+2025-10-13 15:32:32.859 | INFO     | controllers.pipeline:process_video:803 - [Pipeline] Processed 61 sampled frames from input.mp4 (sample_fps=1, duration=00:01:00)
+2025-10-13 15:32:32.885 | INFO     | __main__:_run_job:107 - [Flask] Persisted activity images to /Users/satishvanga/Documents/Vanga/POC_2/example_data/output/20251013_153232
+2025-10-13 15:32:32.885 | INFO     | __main__:_run_job:115 - [Flask] Found 1 events
+2025-10-13 15:33:18.212 | INFO     | __main__:start:49 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_ko37rvgr/input.mp4
+2025-10-13 15:33:28.378 | INFO     | controllers.pipeline:process_video:803 - [Pipeline] Processed 65 sampled frames from input.mp4 (sample_fps=1, duration=00:01:04)
+2025-10-13 15:33:28.407 | INFO     | __main__:_run_job:107 - [Flask] Persisted activity images to /Users/satishvanga/Documents/Vanga/POC_2/example_data/output/20251013_153328
+2025-10-13 15:33:28.407 | INFO     | __main__:_run_job:115 - [Flask] Found 5 events

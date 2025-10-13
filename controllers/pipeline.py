@@ -60,15 +60,15 @@ class ActivityPipeline:
     sleep_cfg_mid_window_s: float = 30.0
     sleep_cfg_long_window_s: float = 120.0
     sleep_cfg_smoothing_alpha: float = 0.5
-    sleep_cfg_eye_closed_run_s: float = 1.5
+    sleep_cfg_eye_closed_run_s: float = 2.2
     sleep_cfg_perclos_drowsy_thresh: float = 0.35
     sleep_cfg_perclos_sleep_thresh: float = 0.75
-    sleep_cfg_head_pitch_down_deg: float = 12.0
+    sleep_cfg_head_pitch_down_deg: float = 20.0
     sleep_cfg_head_neutral_deg: float = 12.0
-    sleep_cfg_hold_transition_s: float = 1.5
+    sleep_cfg_hold_transition_s: float = 1.0
     sleep_cfg_recovery_hold_s: float = 2.0
     sleep_cfg_open_prob_closed_thresh: float = 0.45
-    sleep_cfg_no_eye_head_down_deg: float = 22.0
+    sleep_cfg_no_eye_head_down_deg: float = 32.0
     # Phone inference robustness
     phone_hand_iou_min_frac: float = 0.15
     phone_infer_min_face_frac: float = 0.02
@@ -507,26 +507,74 @@ class ActivityPipeline:
                             nose_xy = (lm[0].x * frame_bgr.shape[1], lm[0].y * frame_bgr.shape[0])
                     except Exception:
                         nose_xy = None
+                    # Prefer pose nose; fallback to face bbox center; then person bbox center
+                    head_point_xy = nose_xy
+                    if head_point_xy is None and face_bbox_crop:
+                        try:
+                            fx1, fy1, fx2, fy2 = face_bbox_crop
+                            head_point_xy = (x1 + (fx1 + fx2) / 2.0, y1 + (fy1 + fy2) / 2.0)
+                        except Exception:
+                            head_point_xy = None
+                    if head_point_xy is None:
+                        head_point_xy = ((x1 + x2) / 2.0, (y1 + y2) / 2.0)
+
                     emitted = sleep_decider.update(
                         track_id=track_id,
                         ts=float(ts),
                         ear=ear,
                         open_prob=open_prob,
                         head_pitch_deg=head_down_angle,
-                        head_point_xy=nose_xy,
+                        head_point_xy=head_point_xy,
                         engaged=engaged,
                     )
                     debug_info = sleep_decider.get_debug(track_id, float(ts))
                     if emitted:
-                        per_frame_activities.append({
-                            "person_id": pid,
-                            "person_bbox": [x1, y1, x2, y2],
-                            "object": emitted.get("activity"),
-                            "object_bbox": None,
-                            "holding": False,
-                            "evidence": {"rule": emitted.get("evidence_rule")},
-                            "track_id": track_id,
-                        })
+                        activity_label = str(emitted.get("activity", ""))
+                        # Gate low-confidence/posture-only microsleep to reduce false positives
+                        if activity_label == "micro_sleep":
+                            conf = float(emitted.get("confidence", 0.0))
+                            rule = str(emitted.get("rule", ""))
+                            closed_run = float(emitted.get("closed_run_s", 0.0))
+                            allow = False
+                            if rule == "eye_path":
+                                allow = (conf >= 0.60) and (closed_run >= self.sleep_cfg_eye_closed_run_s)
+                            else:  # posture_path
+                                allow = conf >= 0.80
+                            if not allow:
+                                pass
+                            else:
+                                per_frame_activities.append({
+                                    "person_id": pid,
+                                    "person_bbox": [x1, y1, x2, y2],
+                                    "object": activity_label,
+                                    "object_bbox": None,
+                                    "holding": False,
+                                    "evidence": {"rule": emitted.get("evidence_rule")},
+                                    "track_id": track_id,
+                                })
+                        else:
+                            # Do not gate sleep escalation events
+                            per_frame_activities.append({
+                                "person_id": pid,
+                                "person_bbox": [x1, y1, x2, y2],
+                                "object": activity_label,
+                                "object_bbox": None,
+                                "holding": False,
+                                "evidence": {"rule": emitted.get("evidence_rule")},
+                                "track_id": track_id,
+                            })
+                    else:
+                        # While in sustained sleep state, add a lightweight tag for annotation only
+                        if debug_info and debug_info.get("state") == "sleep":
+                            per_frame_activities.append({
+                                "person_id": pid,
+                                "person_bbox": [x1, y1, x2, y2],
+                                "object": "sleep",
+                                "object_bbox": None,
+                                "holding": False,
+                                "evidence": {"rule": "state_hold"},
+                                "track_id": track_id,
+                            })
                 else:
                     # Keep existing simple SleepTracker logic
                     eye_open = open_prob if open_prob is not None else None
@@ -559,7 +607,7 @@ class ActivityPipeline:
                         lines.append(f"state: {debug_info.get('state')}")
                         lines.append(f"closed_run_s: {debug_info.get('closed_run_s'):.2f}")
                         lines.append(f"perclos_mw: {debug_info.get('perclos_mw'):.2f}")
-                        lines.append(f"low_motion_sw: {debug_info.get('low_motion_sw')}")
+                        lines.append(f"motion_sw: {debug_info.get('motion_sw')}")
                     tag_base = f"frame_{index:06d}_{ts:.2f}s"
                     try:
                         save_debug_overlay(frame_bgr, lines, tag=tag_base, out_dir=os.path.join(os.path.dirname(video_path), "output"))
@@ -695,6 +743,13 @@ class ActivityPipeline:
                 return 0, (normalized.title() if normalized else "Unknown activity")
 
             for act in per_frame_activities:
+                # Skip annotation-only sleep tags from becoming persisted events
+                try:
+                    ev_tmp = act.get("evidence") or {}
+                    if ev_tmp.get("rule") == "state_hold":
+                        continue
+                except Exception:
+                    pass
                 obj = str(act.get("object", "")).lower()
                 activity_type, des = _map_activity(obj)
                 # If this is the group-count event, override description with actual count

@@ -338,6 +338,9 @@ class SleepDecisionMachineV2:
                 recovered = good_open and neutral_head and (perclos_mw <= self.cfg.perclos_drowsy * 0.6)
             elif not eye_rel and pitch_s is not None:
                 recovered = (abs(pitch_s) <= self.cfg.head_pitch_down_deg / 2) and (still is False)
+            elif not eye_rel and pitch_s is None:
+                # If we lack pitch but see strong motion, consider recovery
+                recovered = (still is False)
 
             if recovered:
                 start_hold("rec_hold_start")
@@ -369,6 +372,8 @@ class SleepDecisionMachineV2:
                 recovered = good_open and neutral_head and (perclos_mw <= self.cfg.perclos_drowsy * 0.5)
             elif not eye_rel and pitch_s is not None:
                 recovered = (abs(pitch_s) <= self.cfg.head_pitch_down_deg / 2) and (still is False)
+            elif not eye_rel and pitch_s is None:
+                recovered = (still is False)
 
             if recovered:
                 start_hold("rec_hold_start")

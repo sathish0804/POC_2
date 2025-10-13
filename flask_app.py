@@ -84,8 +84,6 @@ def create_app() -> Flask:
                 def _progress(ev: Dict[str, Any]):
                     state["processed"] = int(ev.get("processed", state.get("processed", 0)))
                     state["total"] = int(ev.get("total", state.get("total", 0)))
-                    if ev.get("done"):
-                        state["done"] = True
 
                 events: List[ActivityEvent] = pipeline.process_video(state["video_path"], progress_cb=_progress)
 
@@ -114,6 +112,7 @@ def create_app() -> Flask:
                     logger.warning(f"[Flask] Failed to persist activity images: {persist_err}")
                     state["asset_root"] = None
 
+                logger.info(f"[Flask] Found {len(events)} events")
                 state["events"] = [e.model_dump() for e in events]
                 state["done"] = True
             except Exception as e:
