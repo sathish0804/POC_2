@@ -10,3 +10,61 @@ python main.py \
 
 
 uvicorn controllers.api:app --host 0.0.0.0 --port 8000 --reload
+
+
+gsed -i "s/apt-get update/apt-get update || true/" /Users/satishvanga/Documents/Vanga/POC_2/deploy_local.sh || sed -i '' "s/apt-get update/apt-get update || true/" /Users/satishvanga/Documents/Vanga/POC_2/deploy_local.sh && /Users/satishvanga/Documents/Vanga/POC_2/deploy_local.sh
+
+
+sshpass -p 'Login@123@@@' scp -o StrictHostKeyChecking=no /Users/satishvanga/Documents/Vanga/POC_2/app/controllers/ui_controller.py root@103.195.244.67:/opt/poc2/app/controllers/ui_controller.py && sshpass -p 'Login@123@@@' ssh -o StrictHostKeyChecking=no root@103.195.244.67 "systemctl restart poc2 && sleep 2 && systemctl status poc2 --no-pager -l | sed -n '1,50p' && ss -ltnp | grep ':8000' || true"
+
+
+
+ssh root@103.195.244.67 "uptime; top -bn1 | head -n 15; free -h"
+
+
+- **Quick snapshot**:
+```bash
+ssh root@103.195.244.67 "uptime; top -bn1 | head -n 15; free -h"
+```
+- **Live view**:
+```bash
+ssh root@103.195.244.67 "top"   # or: apt-get install -y htop && htop
+```
+- **Top processes**:
+```bash
+ssh root@103.195.244.67 "ps -eo pid,comm,%cpu,%mem --sort=-%cpu | head"
+```
+- **IO/Disk**:
+```bash
+ssh root@103.195.244.67 "apt-get -y install sysstat >/dev/null 2>&1 || true; iostat -xz 1"; ssh root@103.195.244.67 "df -h"
+```
+- **App service**:
+```bash
+ssh root@103.195.244.67 "systemctl status poc2 --no-pager; journalctl -u poc2 -n 50 --no-pager"
+```
+
+
+cd /opt/poc2 && tail -n 200 -f output/app.log
+# optional: grep specific job
+grep -n "8a6649feee184f8e8f6e88642e6d553e" /opt/poc2/output/app.log | tail
+
+
+
+I'll quickly check the `deploy_local.sh` script and server run setup so I can give you precise redeploy commands.
+
+[1 tool called]
+
+- Run the deploy script to push changes and restart the service:
+```bash
+bash /Users/satishvanga/Documents/Vanga/POC_2/deploy_local.sh
+```
+- Verify and tail logs:
+```bash
+curl http://103.195.244.67:8000/health
+ssh root@103.195.244.67 'tail -n 200 -f /opt/poc2/output/app.log'
+```
+- Faster (no new deps) redeploy:
+```bash
+rsync -az --delete --exclude 'output' --exclude '__pycache__' -e ssh /Users/satishvanga/Documents/Vanga/POC_2/ root@103.195.244.67:/opt/poc2 && ssh root@103.195.244.67 'systemctl restart poc2'
+```
+Confirm: Should I proceed with this and accept the changes, or do you want to modify anything?

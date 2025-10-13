@@ -9,7 +9,6 @@ from typing import Dict, Any, List
 
 from flask import Blueprint, current_app, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
 import mimetypes
-from app.services.pipeline_service import ActivityPipeline
 from app.models.activity_event import ActivityEvent
 from loguru import logger
 
@@ -59,6 +58,8 @@ def start():
         if not state:
             return
         try:
+            # Lazily import heavy pipeline to avoid expensive module imports during app startup
+            from app.services.pipeline_service import ActivityPipeline
             pipeline = ActivityPipeline(
                 trip_id=state["trip_id"],
                 crew_name="demo",

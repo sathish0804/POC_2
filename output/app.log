@@ -3,3 +3,7 @@
 2025-10-13 21:22:18.367 | INFO     | app.services.pipeline_service:process_video:830 - [Pipeline] Processed 61 sampled frames from input.mp4 (sample_fps=1, duration=00:01:00)
 2025-10-13 21:22:18.397 | INFO     | app.controllers.ui_controller:_run_job:100 - [Flask] Persisted activity assets to /Users/satishvanga/Documents/Vanga/POC_2/output/20251013_212218
 2025-10-13 21:22:18.398 | INFO     | app.controllers.ui_controller:_run_job:108 - [Flask] Found 1 events
+2025-10-13 21:24:35.340 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_3l35gxrr/input.mp4
+2025-10-13 21:25:35.184 | INFO     | app.services.pipeline_service:process_video:830 - [Pipeline] Processed 257 sampled frames from input.mp4 (sample_fps=1, duration=00:04:16)
+2025-10-13 21:25:35.278 | INFO     | app.controllers.ui_controller:_run_job:100 - [Flask] Persisted activity assets to /Users/satishvanga/Documents/Vanga/POC_2/output/20251013_212535
+2025-10-13 21:25:35.278 | INFO     | app.controllers.ui_controller:_run_job:108 - [Flask] Found 2 events
