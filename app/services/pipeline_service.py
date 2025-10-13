@@ -11,6 +11,7 @@ from app.utils.ocr_utils import OcrUtils
 from app.utils.video_utils import sample_video_frames, get_video_duration_str, get_video_filename, get_expected_sampled_frames
 from app.utils.geometry import iou
 from app.utils.phone_logic import infer_phone_usage_from_landmarks
+from app.services.antenna_refiner import AntennaRefiner
 from app.utils.annotate import annotate_and_save
 from app.utils.trackers import SimpleTracker, SleepTracker, ActivityHeuristicTracker
 from app.utils.eye_metrics import compute_ear, eye_open_probability
@@ -103,6 +104,7 @@ class ActivityPipeline:
             _yolo_conf, _yolo_iou = 0.25, 0.45
         yolo = YoloService(self.yolo_weights, conf=_yolo_conf, iou=_yolo_iou)
         mp_service = MediaPipeService()
+        antenna_refiner = AntennaRefiner(yolo_weights=self.yolo_weights, use_heuristic=True)
         ocr = OcrUtils() if self.enable_ocr else None
 
         events: List[ActivityEvent] = []
@@ -424,28 +426,65 @@ class ActivityPipeline:
 
                 if held_object:
                     obj_name = held_object
+                    # If object detected as cell phone, refine with antenna check to reclassify as walkie-talkie
+                    if obj_name == "cell phone" and held_object_bbox is not None:
+                        try:
+                            has_ant, ant_ev = antenna_refiner.has_antenna(frame_bgr, held_object_bbox)
+                            if has_ant:
+                                obj_name = "walkie_talkie"
+                                evidence = {"rule": "antenna_refiner", **(ant_ev or {})}
+                                # Skip logging walkie-talkie per requirement
+                                pass
+                        except Exception:
+                            pass
                     evidence = {"rule": "hand_object_intersection_frac"}
-                    per_frame_activities.append({
-                        "person_id": pid,
-                        "person_bbox": [x1, y1, x2, y2],
-                        "object": obj_name,
-                        "object_bbox": held_object_bbox,
-                        "holding": True,
-                        "evidence": evidence,
-                        "track_id": track_id,
-                    })
+                    if obj_name != "walkie_talkie":
+                        per_frame_activities.append({
+                            "person_id": pid,
+                            "person_bbox": [x1, y1, x2, y2],
+                            "object": obj_name,
+                            "object_bbox": held_object_bbox,
+                            "holding": True,
+                            "evidence": evidence,
+                            "track_id": track_id,
+                        })
                 elif inferred_phone:
-                    obj_name = "cell phone"
-                    evidence = dict(ev)
-                    per_frame_activities.append({
-                        "person_id": pid,
-                        "person_bbox": [x1, y1, x2, y2],
-                        "object": obj_name,
-                        "object_bbox": None,
-                        "holding": True,
-                        "evidence": evidence,
-                        "track_id": track_id,
-                    })
+                    obj_name = str(ev.get("device_type", "cell phone")).lower() if isinstance(ev, dict) else "cell phone"
+                    evidence = dict(ev) if isinstance(ev, dict) else {}
+                    # If inferred as cell phone, try antenna refinement using a proxy bbox around mouth/hand if available is not present
+                    if obj_name == "cell phone":
+                        try:
+                            # Build a rough bbox around the face mouth zone if present in evidence; fallback to person bbox
+                            proxy_bbox = None
+                            try:
+                                zone = evidence.get("zone")
+                                if zone and "mouth" in str(zone):
+                                    # approximate small box near face center; using person crop since we don't have face bbox absolute here
+                                    cx = (x1 + x2) / 2.0
+                                    cy = y1 + 0.25 * (y2 - y1)
+                                    w = 0.12 * (x2 - x1)
+                                    h = 0.18 * (y2 - y1)
+                                    proxy_bbox = [int(cx - w / 2), int(cy - h / 2), int(cx + w / 2), int(cy + h / 2)]
+                            except Exception:
+                                proxy_bbox = None
+                            if proxy_bbox is None:
+                                proxy_bbox = [int(x1), int(y1), int(x2), int(y2)]
+                            has_ant, ant_ev = antenna_refiner.has_antenna(frame_bgr, proxy_bbox)
+                            if has_ant:
+                                obj_name = "walkie_talkie"
+                                evidence = {"rule": "antenna_refiner", **(ant_ev or {})}
+                        except Exception:
+                            pass
+                    if obj_name != "walkie_talkie":
+                        per_frame_activities.append({
+                            "person_id": pid,
+                            "person_bbox": [x1, y1, x2, y2],
+                            "object": obj_name,
+                            "object_bbox": None,
+                            "holding": True,
+                            "evidence": evidence,
+                            "track_id": track_id,
+                        })
 
                 ear = None
                 open_prob = None

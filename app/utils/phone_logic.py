@@ -97,11 +97,11 @@ def infer_phone_usage_from_landmarks(
                         "device_type": "cell phone",
                     }
                 elif ("mouth" in zone_name and d < mouth_close_thresh):
-                    # Previously mapped to walkie-talkie; now uniformly map to cell phone
+                    # Reintroduce walkie-talkie mapping for mouth-zone proximity
                     return True, {
                         "rule": f"hand_near_{zone_name}",
                         "distance_px": float(d),
                         "zone": zone_name,
-                        "device_type": "cell phone",
+                        "device_type": "walkie_talkie",
                     }
     return False, {"reason": "no_hand_near_face_zones"}

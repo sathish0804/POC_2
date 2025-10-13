@@ -1,32 +1,5 @@
-2025-10-13 19:50:34.849 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 19:50:39.969 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 19:59:03.786 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 19:59:07.432 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 19:59:09.161 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_0quihm54/input.mp4
-2025-10-13 19:59:22.809 | INFO     | app.services.pipeline_service:process_video:752 - [Pipeline] Processed 61 sampled frames from input.mp4 (sample_fps=1, duration=00:01:00)
-2025-10-13 19:59:22.828 | INFO     | app.controllers.ui_controller:_run_job:100 - [Flask] Persisted activity assets to /Users/satishvanga/Documents/Vanga/POC_2/output/20251013_195922
-2025-10-13 19:59:22.828 | INFO     | app.controllers.ui_controller:_run_job:108 - [Flask] Found 0 events
-2025-10-13 19:59:54.466 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 19:59:55.092 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_l5a3y_l5/input.mp4
-2025-10-13 20:00:10.237 | INFO     | app.services.pipeline_service:process_video:752 - [Pipeline] Processed 61 sampled frames from input.mp4 (sample_fps=1, duration=00:01:00)
-2025-10-13 20:00:10.273 | INFO     | app.controllers.ui_controller:_run_job:100 - [Flask] Persisted activity assets to /Users/satishvanga/Documents/Vanga/POC_2/output/20251013_200010
-2025-10-13 20:00:10.273 | INFO     | app.controllers.ui_controller:_run_job:108 - [Flask] Found 1 events
-2025-10-13 20:28:16.240 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 20:28:30.668 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 20:29:57.865 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 20:31:53.435 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_siu3imdb/input.mp4
-2025-10-13 20:32:06.797 | INFO     | app.services.pipeline_service:process_video:791 - [Pipeline] Processed 61 sampled frames from input.mp4 (sample_fps=1, duration=00:01:00)
-2025-10-13 20:32:06.832 | INFO     | app.controllers.ui_controller:_run_job:100 - [Flask] Persisted activity assets to /Users/satishvanga/Documents/Vanga/POC_2/output/20251013_203206
-2025-10-13 20:32:06.833 | INFO     | app.controllers.ui_controller:_run_job:108 - [Flask] Found 1 events
-2025-10-13 20:32:32.430 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_bnqd3u6d/input.mp4
-2025-10-13 20:32:50.805 | INFO     | app.services.pipeline_service:process_video:791 - [Pipeline] Processed 65 sampled frames from input.mp4 (sample_fps=1, duration=00:01:04)
-2025-10-13 20:32:50.857 | INFO     | app.controllers.ui_controller:_run_job:100 - [Flask] Persisted activity assets to /Users/satishvanga/Documents/Vanga/POC_2/output/20251013_203250
-2025-10-13 20:32:50.857 | INFO     | app.controllers.ui_controller:_run_job:108 - [Flask] Found 9 events
-2025-10-13 20:33:39.108 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_v7yqvg8k/input.mp4
-2025-10-13 20:34:03.605 | INFO     | app.services.pipeline_service:process_video:791 - [Pipeline] Processed 120 sampled frames from input.mp4 (sample_fps=1, duration=00:01:59)
-2025-10-13 20:34:03.633 | INFO     | app.controllers.ui_controller:_run_job:100 - [Flask] Persisted activity assets to /Users/satishvanga/Documents/Vanga/POC_2/output/20251013_203403
-2025-10-13 20:34:03.633 | INFO     | app.controllers.ui_controller:_run_job:108 - [Flask] Found 6 events
-2025-10-13 20:34:22.070 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_t2ktasei/input.mp4
-2025-10-13 20:41:04.575 | INFO     | app.services.pipeline_service:process_video:791 - [Pipeline] Processed 1671 sampled frames from input.mp4 (sample_fps=1, duration=00:27:50)
-2025-10-13 20:41:06.294 | INFO     | app.controllers.ui_controller:_run_job:100 - [Flask] Persisted activity assets to /Users/satishvanga/Documents/Vanga/POC_2/output/20251013_204104
-2025-10-13 20:41:06.294 | INFO     | app.controllers.ui_controller:_run_job:108 - [Flask] Found 40 events
+2025-10-13 21:21:51.436 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
+2025-10-13 21:22:04.386 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_x823p61o/input.mp4
+2025-10-13 21:22:18.367 | INFO     | app.services.pipeline_service:process_video:830 - [Pipeline] Processed 61 sampled frames from input.mp4 (sample_fps=1, duration=00:01:00)
+2025-10-13 21:22:18.397 | INFO     | app.controllers.ui_controller:_run_job:100 - [Flask] Persisted activity assets to /Users/satishvanga/Documents/Vanga/POC_2/output/20251013_212218
+2025-10-13 21:22:18.398 | INFO     | app.controllers.ui_controller:_run_job:108 - [Flask] Found 1 events
