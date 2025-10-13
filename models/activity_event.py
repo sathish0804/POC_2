@@ -23,3 +23,5 @@ class ActivityEvent(BaseModel):
     evidence: Optional[Dict[str, Any]] = Field(default=None)
     # Optional: filename of annotated activity image for this frame
     activityImage: Optional[str] = Field(default=None)
+    # Optional: short MP4 clip around the event timestamp (for sleep/micro-sleep)
+    activityClip: Optional[str] = Field(default=None)

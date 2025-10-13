@@ -19,6 +19,7 @@ from utils.debug_overlay import save_debug_overlay
 from utils.flag_utils import detect_green_flags
 from utils.window_utils import detect_window_regions
 from loguru import logger
+from utils.clip_utils import extract_clip
 
 
 @dataclass
@@ -35,7 +36,7 @@ class ActivityPipeline:
     # Sleep thresholds
     sleep_eye_thresh: float = 0.18
     sleep_headdown_deg: float = 100.0
-    sleep_micro_max_min: float = 15.0
+    sleep_micro_max_min: float = 0.25
     sleep_min_duration: float = 10.0
     # Person post-processing thresholds (to reduce false extra persons)
     person_min_conf: float = 0.45
@@ -54,6 +55,20 @@ class ActivityPipeline:
     # Advanced sleep logic
     use_advanced_sleep: bool = False
     save_debug_overlays: bool = False
+    # Tunable advanced sleep config (defaults aimed at higher sensitivity)
+    sleep_cfg_short_window_s: float = 4.0
+    sleep_cfg_mid_window_s: float = 30.0
+    sleep_cfg_long_window_s: float = 120.0
+    sleep_cfg_smoothing_alpha: float = 0.5
+    sleep_cfg_eye_closed_run_s: float = 1.5
+    sleep_cfg_perclos_drowsy_thresh: float = 0.35
+    sleep_cfg_perclos_sleep_thresh: float = 0.75
+    sleep_cfg_head_pitch_down_deg: float = 12.0
+    sleep_cfg_head_neutral_deg: float = 12.0
+    sleep_cfg_hold_transition_s: float = 1.5
+    sleep_cfg_recovery_hold_s: float = 2.0
+    sleep_cfg_open_prob_closed_thresh: float = 0.45
+    sleep_cfg_no_eye_head_down_deg: float = 22.0
     # Phone inference robustness
     phone_hand_iou_min_frac: float = 0.15
     phone_infer_min_face_frac: float = 0.02
@@ -106,7 +121,25 @@ class ActivityPipeline:
             packing_window_s=self.pack_window_s,
             iou_overlap_thresh=self.pack_iou_overlap_thresh,
         )
-        sleep_decider = SleepDecisionMachine(SleepDecisionConfig()) if self.use_advanced_sleep else None
+        sleep_decider = SleepDecisionMachine(SleepDecisionConfig(
+            short_window_s=self.sleep_cfg_short_window_s,
+            mid_window_s=self.sleep_cfg_mid_window_s,
+            long_window_s=self.sleep_cfg_long_window_s,
+            smoothing_alpha=self.sleep_cfg_smoothing_alpha,
+            eye_closed_run_s=self.sleep_cfg_eye_closed_run_s,
+            perclos_drowsy_thresh=self.sleep_cfg_perclos_drowsy_thresh,
+            perclos_sleep_thresh=self.sleep_cfg_perclos_sleep_thresh,
+            head_pitch_down_deg=self.sleep_cfg_head_pitch_down_deg,
+            head_neutral_deg=self.sleep_cfg_head_neutral_deg,
+            hold_transition_s=self.sleep_cfg_hold_transition_s,
+            recovery_hold_s=self.sleep_cfg_recovery_hold_s,
+            open_prob_closed_thresh=self.sleep_cfg_open_prob_closed_thresh,
+            head_down_micro_fallback=True,
+            head_down_micro_deg=max(self.sleep_cfg_head_pitch_down_deg, 40.0),
+            ear_high_weird_threshold=0.42,
+            # custom param present in config
+            no_eye_head_down_deg=self.sleep_cfg_no_eye_head_down_deg,
+        )) if self.use_advanced_sleep else None
 
         processed = 0
         # Estimate total sampled frames for progress reporting
@@ -673,6 +706,14 @@ class ActivityPipeline:
                             des = f"{cnt} people detected"
                     except Exception:
                         pass
+                # Extract a short clip for all activities
+                clip_filename = None
+                try:
+                    out_dir = os.path.join(os.path.dirname(video_path), "output")
+                    clip_filename = extract_clip(video_path, float(ts), out_dir, tag_base, duration_s=4.0)
+                except Exception:
+                    clip_filename = None
+
                 event = ActivityEvent(
                     tripId=self.trip_id,
                     activityType=activity_type,
@@ -690,6 +731,7 @@ class ActivityPipeline:
                     peopleCount=len(persons),
                     evidence=act.get("evidence"),
                     activityImage=f"{tag_base}_activity.jpg",
+                    activityClip=clip_filename,
                 )
                 events.append(event)
 

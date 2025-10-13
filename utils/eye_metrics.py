@@ -68,7 +68,7 @@ def compute_ear(face_landmarks: Any, frame_shape: Tuple[int, int]) -> Optional[f
         return None
 
 
-def eye_open_probability(ear: Optional[float], ear_open: float = 0.30, ear_closed: float = 0.20) -> Optional[float]:
+def eye_open_probability(ear: Optional[float], ear_open: float = 0.28, ear_closed: float = 0.18) -> Optional[float]:
     """Map EAR to a coarse eye open probability between 0 and 1 using linear ramp.
 
     This is a placeholder until a dedicated NIR eye-state classifier is integrated.

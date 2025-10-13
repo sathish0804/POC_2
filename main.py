@@ -44,7 +44,7 @@ if __name__ == "__main__":
     # Sleep thresholds
     parser.add_argument("--sleep_eye_thresh", type=float, default=0.18, help="Eye openness threshold (<= means closed)")
     parser.add_argument("--sleep_headdown_deg", type=float, default=100.0, help="Head-down angle threshold (deg)")
-    parser.add_argument("--sleep_micro_max_min", type=float, default=15.0, help="Max minutes for micro-sleep classification")
+    parser.add_argument("--sleep_micro_max_min", type=float, default=0.25, help="Max minutes for micro-sleep classification (0.25=15s)")
     parser.add_argument("--sleep_min_duration", type=float, default=10.0, help="Minimum seconds to consider a sleep episode")
     args = parser.parse_args()
 

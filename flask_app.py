@@ -71,11 +71,13 @@ def create_app() -> Flask:
                     crew_id="1",
                     crew_role=1,
                     yolo_weights="yolo11s.pt",
-                    sample_fps=3,
+                    sample_fps=1,
                     enable_ocr=False,
                     verbose=False,
-                    max_frames=400,
+                    max_frames=0,
                     use_advanced_sleep=True,
+                    sleep_min_duration=10.0,
+                    sleep_micro_max_min=0.25,
                     save_debug_overlays=True,
                 )
 
@@ -166,7 +168,38 @@ def create_app() -> Flask:
             return redirect(url_for("index"))
         events = state.get("events") or []
         trip_id = state.get("trip_id") or ""
-        return render_template("results.html", events=events, trip_id=trip_id, job_id=job_id)
+
+        # Pagination params with sane bounds
+        try:
+            page = max(1, int(request.args.get("page", 1)))
+        except Exception:
+            page = 1
+        try:
+            page_size = int(request.args.get("page_size", 25))
+        except Exception:
+            page_size = 25
+        page_size = max(1, min(100, page_size))
+
+        total = len(events)
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        if page > total_pages:
+            page = total_pages
+        start = (page - 1) * page_size
+        end = min(start + page_size, total)
+        paged_events = events[start:end]
+
+        return render_template(
+            "results.html",
+            events=paged_events,
+            trip_id=trip_id,
+            job_id=job_id,
+            page=page,
+            page_size=page_size,
+            total=total,
+            start=start,
+            end=end,
+            total_pages=total_pages,
+        )
 
     @app.get("/media/<job_id>/<path:filename>")
     def media(job_id: str, filename: str):

@@ -61,6 +61,7 @@ def _build_pipeline(
         enable_ocr=enable_ocr,
         verbose=verbose,
         max_frames=max_frames,
+        use_advanced_sleep=True,
     )
 
 

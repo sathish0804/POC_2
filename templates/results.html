@@ -17,11 +17,27 @@
       <h2>Events for Trip {{ trip_id }}</h2>
       <a href="{{ url_for('index') }}">← Back</a>
       {% if events and events|length > 0 %}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:0.75rem 0 1rem;">
+        <small>Showing {{ (start + 1) if total > 0 else 0 }}–{{ end if end < total else total }} of {{ total }}</small>
+        <div style="display:flex;gap:0.5rem;align-items:center;">
+          {% if page > 1 %}
+            <a role="button" href="{{ url_for('results', job_id=job_id, page=page-1, page_size=page_size) }}">Prev</a>
+          {% else %}
+            <button disabled>Prev</button>
+          {% endif %}
+          <small>Page {{ page }} / {{ total_pages }}</small>
+          {% if page < total_pages %}
+            <a role="button" href="{{ url_for('results', job_id=job_id, page=page+1, page_size=page_size) }}">Next</a>
+          {% else %}
+            <button disabled>Next</button>
+          {% endif %}
+        </div>
+      </div>
       <table>
         <thead>
           <tr>
             <th>#</th>
-            <th>Activity Image</th>
+            <th>Media</th>
             <th>activityType</th>
             <th>des</th>
             <th>objectType</th>
@@ -41,7 +57,9 @@
           <tr>
             <td>{{ loop.index }}</td>
             <td>
-              {% if e["activityImage"] %}
+              {% if e["activityClip"] %}
+                <video src="{{ url_for('media', job_id=job_id, filename=e['activityClip']) }}" controls style="height:120px;width:auto;object-fit:cover;"></video>
+              {% elif e["activityImage"] %}
                 <a href="{{ url_for('media', job_id=job_id, filename=e['activityImage']) }}" target="_blank" rel="noopener noreferrer" title="Open full image in new tab">
                   <img src="{{ url_for('media', job_id=job_id, filename=e['activityImage']) }}" alt="activity" style="height:64px;width:auto;object-fit:cover;" />
                 </a>

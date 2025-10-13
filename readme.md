@@ -78,7 +78,7 @@ Both endpoints return a JSON array of events using the same schema as `output/ev
 3. Using cell phone (hand-phone IoU > threshold)
 4. Writing while moving (hand motion near pen/notebook)
 5. Packing (hand overlaps bag frequently)
-6. (Removed) Calling signals (arm extension gesture repeated)
+6. Calling signals (arm extension gesture repeated)
 7. Signal exchange with flag (flag + hand interaction)
 
 ## JSON Schema
