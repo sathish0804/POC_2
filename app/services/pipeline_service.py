@@ -87,6 +87,9 @@ class ActivityPipeline:
     write_min_path_px: float = 100.0
     write_max_radius_px: float = 25.0
     write_lap_band_frac: float = 0.40
+    # Require a visible surface (book/paper) to emit 'writing'
+    write_require_surface: bool = True
+    write_ocr_min_chars: int = 14
 
     def process_video(self, video_path: str, progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None) -> List[ActivityEvent]:
         if self.verbose:
@@ -634,15 +637,51 @@ class ActivityPipeline:
                     pose_points=pose_points,
                 )
                 for aev in act_events:
-                    per_frame_activities.append({
-                        "person_id": pid,
-                        "person_bbox": [x1, y1, x2, y2],
-                        "object": aev.get("activity"),
-                        "object_bbox": None,
-                        "holding": False,
-                        "evidence": {"rule": aev.get("evidence_rule")},
-                        "track_id": track_id,
-                    })
+                    label = str(aev.get("activity", "")).lower()
+                    evidence_rule = str(aev.get("evidence_rule", ""))
+
+                    allow_emit = True
+                    evidence = {"rule": evidence_rule}
+
+                    # Gate 'writing' on presence of a surface (book or OCR text) in lap area
+                    if label == "writing" and bool(self.write_require_surface):
+                        ph = max(1.0, float(y2 - y1))
+                        lap_y1 = y1 + int((1.0 - float(self.write_lap_band_frac)) * ph)
+                        lap_rect = (float(x1), float(lap_y1), float(x2), float(y2))
+
+                        # Gate 1: YOLO 'book' (COCO id 73) overlapping lap band
+                        has_book_surface = any(
+                            (cid == 73) and (iou(pb, ob) > 0.0) and (iou(lap_rect, ob) > 0.05)
+                            for (cid, score, ob) in objects
+                        )
+
+                        # Gate 2: OCR finds sufficient text in lap band (proxy for paper)
+                        has_text_surface = False
+                        if (not has_book_surface) and (ocr is not None):
+                            try:
+                                lap_crop = frame_bgr[lap_y1:y2, x1:x2]
+                                txt = (ocr.extract_text(lap_crop) or "").strip()
+                                has_text_surface = (len(txt) >= int(self.write_ocr_min_chars))
+                            except Exception:
+                                has_text_surface = False
+
+                        allow_emit = bool(has_book_surface or has_text_surface)
+                        if allow_emit:
+                            evidence = {"rule": "writing_surface_present_book" if has_book_surface else "writing_surface_present_ocr"}
+                        else:
+                            # Suppress false positive (e.g., gear/lever motion without surface)
+                            evidence = {"rule": "writing_suppressed_no_surface"}
+
+                    if allow_emit:
+                        per_frame_activities.append({
+                            "person_id": pid,
+                            "person_bbox": [x1, y1, x2, y2],
+                            "object": label,
+                            "object_bbox": None,
+                            "holding": False,
+                            "evidence": evidence,
+                            "track_id": track_id,
+                        })
 
             try:
                 if len(persons) > 2:

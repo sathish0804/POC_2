@@ -1,110 +1,32 @@
-2025-10-13 17:29:37.283 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:29:41.931 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:29:49.441 | INFO     | app.controllers.ui_controller:start:41 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_7ye0gvs8/input.mp4
-2025-10-13 17:30:05.185 | INFO     | app.services.pipeline_service:process_video:752 - [Pipeline] Processed 61 sampled frames from input.mp4 (sample_fps=1, duration=00:01:00)
-2025-10-13 17:30:05.185 | WARNING  | app.controllers.ui_controller:_run_job:102 - [Flask] Failed to persist activity images: Working outside of application context.
-
-This typically means that you attempted to use functionality that needed
-the current application. To solve this, set up an application context
-with app.app_context(). See the documentation for more information.
-2025-10-13 17:30:05.185 | INFO     | app.controllers.ui_controller:_run_job:105 - [Flask] Found 1 events
-2025-10-13 17:32:51.494 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:32:58.458 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:33:22.863 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:33:27.003 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:33:27.137 | INFO     | app.controllers.ui_controller:start:41 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload__uc0rqfe/input.mp4
-2025-10-13 17:33:49.386 | INFO     | app.services.pipeline_service:process_video:752 - [Pipeline] Processed 61 sampled frames from input.mp4 (sample_fps=1, duration=00:01:00)
-2025-10-13 17:33:49.386 | WARNING  | app.controllers.ui_controller:_run_job:104 - [Flask] Failed to persist activity assets: Working outside of application context.
-
-This typically means that you attempted to use functionality that needed
-the current application. To solve this, set up an application context
-with app.app_context(). See the documentation for more information.
-2025-10-13 17:33:49.386 | INFO     | app.controllers.ui_controller:_run_job:107 - [Flask] Found 1 events
-2025-10-13 17:36:30.779 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:36:38.995 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:36:48.110 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_op4qyckt/input.mp4
-2025-10-13 17:37:09.874 | INFO     | app.services.pipeline_service:process_video:752 - [Pipeline] Processed 65 sampled frames from input.mp4 (sample_fps=1, duration=00:01:04)
-2025-10-13 17:37:09.874 | WARNING  | app.controllers.ui_controller:_run_job:105 - [Flask] Failed to persist activity assets: Working outside of application context.
-
-This typically means that you attempted to use functionality that needed
-the current application. To solve this, set up an application context
-with app.app_context(). See the documentation for more information.
-2025-10-13 17:37:09.874 | INFO     | app.controllers.ui_controller:_run_job:108 - [Flask] Found 8 events
-2025-10-13 17:37:27.526 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:37:31.545 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:37:37.864 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_8o7380lp/input.mp4
-2025-10-13 17:37:58.129 | INFO     | app.services.pipeline_service:process_video:752 - [Pipeline] Processed 65 sampled frames from input.mp4 (sample_fps=1, duration=00:01:04)
-2025-10-13 17:37:58.130 | WARNING  | app.controllers.ui_controller:_run_job:105 - [Flask] Failed to persist activity assets: Working outside of application context.
-
-This typically means that you attempted to use functionality that needed
-the current application. To solve this, set up an application context
-with app.app_context(). See the documentation for more information.
-2025-10-13 17:37:58.130 | INFO     | app.controllers.ui_controller:_run_job:108 - [Flask] Found 8 events
-2025-10-13 17:40:14.130 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:40:24.058 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:40:32.995 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:40:40.992 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:40:44.939 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:42:13.474 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_abwn_t7n/input.mp4
-2025-10-13 17:42:34.712 | INFO     | app.services.pipeline_service:process_video:752 - [Pipeline] Processed 65 sampled frames from input.mp4 (sample_fps=1, duration=00:01:04)
-2025-10-13 17:42:34.713 | WARNING  | app.controllers.ui_controller:_run_job:105 - [Flask] Failed to persist activity assets: Working outside of application context.
-
-This typically means that you attempted to use functionality that needed
-the current application. To solve this, set up an application context
-with app.app_context(). See the documentation for more information.
-2025-10-13 17:42:34.713 | INFO     | app.controllers.ui_controller:_run_job:108 - [Flask] Found 8 events
-2025-10-13 17:44:51.722 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:45:17.890 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:46:07.932 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:46:19.602 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload__fay0_7r/input.mp4
-2025-10-13 17:46:40.094 | INFO     | app.services.pipeline_service:process_video:752 - [Pipeline] Processed 65 sampled frames from input.mp4 (sample_fps=1, duration=00:01:04)
-2025-10-13 17:46:40.094 | WARNING  | app.controllers.ui_controller:_run_job:104 - [Flask] Failed to persist activity assets: Working outside of application context.
-
-This typically means that you attempted to use functionality that needed
-the current application. To solve this, set up an application context
-with app.app_context(). See the documentation for more information.
-2025-10-13 17:46:40.095 | INFO     | app.controllers.ui_controller:_run_job:107 - [Flask] Found 8 events
-2025-10-13 17:48:52.851 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:48:57.054 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:48:57.489 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_bphq3z2b/input.mp4
-2025-10-13 17:49:17.586 | INFO     | app.services.pipeline_service:process_video:752 - [Pipeline] Processed 65 sampled frames from input.mp4 (sample_fps=1, duration=00:01:04)
-2025-10-13 17:49:17.586 | WARNING  | app.controllers.ui_controller:_run_job:104 - [Flask] Failed to persist activity assets: Working outside of application context.
-
-This typically means that you attempted to use functionality that needed
-the current application. To solve this, set up an application context
-with app.app_context(). See the documentation for more information.
-2025-10-13 17:49:17.587 | INFO     | app.controllers.ui_controller:_run_job:107 - [Flask] Found 8 events
-2025-10-13 17:51:56.681 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:53:34.137 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:53:40.193 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:54:22.437 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:54:35.136 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:54:39.339 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:54:46.096 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_r17u8sun/input.mp4
-2025-10-13 17:55:07.379 | INFO     | app.services.pipeline_service:process_video:752 - [Pipeline] Processed 65 sampled frames from input.mp4 (sample_fps=1, duration=00:01:04)
-2025-10-13 17:55:07.380 | WARNING  | app.controllers.ui_controller:_run_job:105 - [Flask] Failed to persist activity assets: Working outside of application context.
-
-This typically means that you attempted to use functionality that needed
-the current application. To solve this, set up an application context
-with app.app_context(). See the documentation for more information.
-2025-10-13 17:55:07.380 | INFO     | app.controllers.ui_controller:_run_job:108 - [Flask] Found 8 events
-2025-10-13 17:56:30.103 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:56:30.297 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_y6hqm_wz/input.mp4
-2025-10-13 17:56:47.267 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:57:02.448 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:57:06.358 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 17:57:14.183 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_9ohet505/input.mp4
-2025-10-13 17:57:36.150 | INFO     | app.services.pipeline_service:process_video:752 - [Pipeline] Processed 65 sampled frames from input.mp4 (sample_fps=1, duration=00:01:04)
-2025-10-13 17:57:36.186 | INFO     | app.controllers.ui_controller:_run_job:100 - [Flask] Persisted activity assets to /Users/satishvanga/Documents/Vanga/POC_2/output/20251013_175736
-2025-10-13 17:57:36.186 | INFO     | app.controllers.ui_controller:_run_job:108 - [Flask] Found 8 events
-2025-10-13 18:03:21.413 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_lv6qitqh/input.mp4
-2025-10-13 18:03:36.907 | INFO     | app.services.pipeline_service:process_video:752 - [Pipeline] Processed 61 sampled frames from input.mp4 (sample_fps=1, duration=00:01:00)
-2025-10-13 18:03:37.031 | INFO     | app.controllers.ui_controller:_run_job:100 - [Flask] Persisted activity assets to /Users/satishvanga/Documents/Vanga/POC_2/output/20251013_180336
-2025-10-13 18:03:37.031 | INFO     | app.controllers.ui_controller:_run_job:108 - [Flask] Found 1 events
-2025-10-13 18:04:51.029 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_y_1z3bus/input.mp4
-2025-10-13 18:12:49.568 | INFO     | app.services.pipeline_service:process_video:752 - [Pipeline] Processed 1671 sampled frames from input.mp4 (sample_fps=1, duration=00:27:50)
-2025-10-13 18:12:50.846 | INFO     | app.controllers.ui_controller:_run_job:100 - [Flask] Persisted activity assets to /Users/satishvanga/Documents/Vanga/POC_2/output/20251013_181249
-2025-10-13 18:12:50.846 | INFO     | app.controllers.ui_controller:_run_job:108 - [Flask] Found 28 events
-2025-10-13 18:24:04.641 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 18:24:19.698 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
-2025-10-13 18:24:52.856 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
+2025-10-13 19:50:34.849 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
+2025-10-13 19:50:39.969 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
+2025-10-13 19:59:03.786 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
+2025-10-13 19:59:07.432 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
+2025-10-13 19:59:09.161 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_0quihm54/input.mp4
+2025-10-13 19:59:22.809 | INFO     | app.services.pipeline_service:process_video:752 - [Pipeline] Processed 61 sampled frames from input.mp4 (sample_fps=1, duration=00:01:00)
+2025-10-13 19:59:22.828 | INFO     | app.controllers.ui_controller:_run_job:100 - [Flask] Persisted activity assets to /Users/satishvanga/Documents/Vanga/POC_2/output/20251013_195922
+2025-10-13 19:59:22.828 | INFO     | app.controllers.ui_controller:_run_job:108 - [Flask] Found 0 events
+2025-10-13 19:59:54.466 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
+2025-10-13 19:59:55.092 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_l5a3y_l5/input.mp4
+2025-10-13 20:00:10.237 | INFO     | app.services.pipeline_service:process_video:752 - [Pipeline] Processed 61 sampled frames from input.mp4 (sample_fps=1, duration=00:01:00)
+2025-10-13 20:00:10.273 | INFO     | app.controllers.ui_controller:_run_job:100 - [Flask] Persisted activity assets to /Users/satishvanga/Documents/Vanga/POC_2/output/20251013_200010
+2025-10-13 20:00:10.273 | INFO     | app.controllers.ui_controller:_run_job:108 - [Flask] Found 1 events
+2025-10-13 20:28:16.240 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
+2025-10-13 20:28:30.668 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
+2025-10-13 20:29:57.865 | DEBUG    | app.utils.logging_utils:configure_logging:43 - Logging configured. Path=/Users/satishvanga/Documents/Vanga/POC_2/output/app.log, level=DEBUG
+2025-10-13 20:31:53.435 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_siu3imdb/input.mp4
+2025-10-13 20:32:06.797 | INFO     | app.services.pipeline_service:process_video:791 - [Pipeline] Processed 61 sampled frames from input.mp4 (sample_fps=1, duration=00:01:00)
+2025-10-13 20:32:06.832 | INFO     | app.controllers.ui_controller:_run_job:100 - [Flask] Persisted activity assets to /Users/satishvanga/Documents/Vanga/POC_2/output/20251013_203206
+2025-10-13 20:32:06.833 | INFO     | app.controllers.ui_controller:_run_job:108 - [Flask] Found 1 events
+2025-10-13 20:32:32.430 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_bnqd3u6d/input.mp4
+2025-10-13 20:32:50.805 | INFO     | app.services.pipeline_service:process_video:791 - [Pipeline] Processed 65 sampled frames from input.mp4 (sample_fps=1, duration=00:01:04)
+2025-10-13 20:32:50.857 | INFO     | app.controllers.ui_controller:_run_job:100 - [Flask] Persisted activity assets to /Users/satishvanga/Documents/Vanga/POC_2/output/20251013_203250
+2025-10-13 20:32:50.857 | INFO     | app.controllers.ui_controller:_run_job:108 - [Flask] Found 9 events
+2025-10-13 20:33:39.108 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_v7yqvg8k/input.mp4
+2025-10-13 20:34:03.605 | INFO     | app.services.pipeline_service:process_video:791 - [Pipeline] Processed 120 sampled frames from input.mp4 (sample_fps=1, duration=00:01:59)
+2025-10-13 20:34:03.633 | INFO     | app.controllers.ui_controller:_run_job:100 - [Flask] Persisted activity assets to /Users/satishvanga/Documents/Vanga/POC_2/output/20251013_203403
+2025-10-13 20:34:03.633 | INFO     | app.controllers.ui_controller:_run_job:108 - [Flask] Found 6 events
+2025-10-13 20:34:22.070 | INFO     | app.controllers.ui_controller:start:42 - [Flask] Uploaded video saved to /var/folders/bv/k2ssltk963x1354tz73ncnrr0000gp/T/upload_t2ktasei/input.mp4
+2025-10-13 20:41:04.575 | INFO     | app.services.pipeline_service:process_video:791 - [Pipeline] Processed 1671 sampled frames from input.mp4 (sample_fps=1, duration=00:27:50)
+2025-10-13 20:41:06.294 | INFO     | app.controllers.ui_controller:_run_job:100 - [Flask] Persisted activity assets to /Users/satishvanga/Documents/Vanga/POC_2/output/20251013_204104
+2025-10-13 20:41:06.294 | INFO     | app.controllers.ui_controller:_run_job:108 - [Flask] Found 40 events
