@@ -70,7 +70,7 @@ def create_app() -> Flask:
                     crew_name="demo",
                     crew_id="1",
                     crew_role=1,
-                    yolo_weights="yolo11s.pt",
+                    yolo_weights="yolov8l.pt",
                     sample_fps=1,
                     enable_ocr=False,
                     verbose=False,
