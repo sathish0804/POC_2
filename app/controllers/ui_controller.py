@@ -144,6 +144,20 @@ def start():
                 sleep_min_duration=10.0,
                 sleep_micro_max_min=0.25,
                 save_debug_overlays=True,
+                # Pin advanced sleep thresholds for consistency across environments
+                sleep_cfg_short_window_s=4.0,
+                sleep_cfg_mid_window_s=30.0,
+                sleep_cfg_long_window_s=120.0,
+                sleep_cfg_smoothing_alpha=0.5,
+                sleep_cfg_eye_closed_run_s=2.2,
+                sleep_cfg_perclos_drowsy_thresh=0.35,
+                sleep_cfg_perclos_sleep_thresh=0.75,
+                sleep_cfg_head_pitch_down_deg=20.0,
+                sleep_cfg_head_neutral_deg=12.0,
+                sleep_cfg_hold_transition_s=1.0,
+                sleep_cfg_recovery_hold_s=2.0,
+                sleep_cfg_open_prob_closed_thresh=0.45,
+                sleep_cfg_no_eye_head_down_deg=32.0,
             )
 
             def _progress(ev: Dict[str, Any]):
