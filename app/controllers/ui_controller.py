@@ -5,17 +5,19 @@ import shutil
 import tempfile
 import uuid
 import threading
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 
-from flask import Blueprint, current_app, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
 import mimetypes
-from app.models.activity_event import ActivityEvent
 from loguru import logger
 import json
 from pathlib import Path
 import subprocess
 import math
 import time
+import multiprocessing as mp
+import concurrent.futures as cf
+import cv2
 from app.utils.video_utils import get_expected_sampled_frames
 
 
@@ -77,6 +79,74 @@ def _ffprobe_duration_seconds(video_path: str) -> float:
         return 0.0
 
 
+def _count_total_frames(video_path: str) -> int:
+    """Count total frames using metadata, fall back to scan if needed."""
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return 0
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    logger.info(f"[Flask] _count_total_frames: {video_path}, total={total}")
+    if total <= 0:
+        total = 0
+        while True:
+            ok, _ = cap.read()
+            if not ok:
+                break
+            total += 1
+    cap.release()
+    logger.info(f"[Flask] _count_total_frames: {video_path}, total={total}")
+    return total
+
+
+def _split_frame_ranges(total_frames: int, num_processes: int) -> List[Tuple[int, int]]:
+    """Evenly partition [0, total_frames) into num_processes contiguous ranges."""
+    if num_processes <= 0:
+        return [(0, total_frames)]
+    logger.info(f"[Flask] _split_frame_ranges:, total_frames={total_frames}, num_processes={num_processes}")
+    base = total_frames // num_processes
+    remainder = total_frames % num_processes
+    ranges: List[Tuple[int, int]] = []
+    start = 0
+    for i in range(num_processes):
+        count = base + (1 if i < remainder else 0)
+        end = start + count
+        ranges.append((start, end))
+        start = end
+    logger.info(f"[Flask] _split_frame_ranges: , ranges={ranges}")
+    return ranges
+
+
+def _expected_sampled_in_range(video_path: str, sample_fps: int, start_frame: int, end_frame: int) -> int:
+    """Compute expected sampled frames in [start_frame, end_frame) using same logic as video_utils."""
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return 0
+    native_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    step = max(1, int(round(native_fps / max(1, sample_fps))))
+    cap.release()
+    lo = max(0, int(start_frame))
+    hi = max(0, int(end_frame))
+    if hi <= lo:
+        return 0
+    first = ((lo + step - 1) // step) * step
+    if first >= hi:
+        return 0
+    return ((hi - 1 - first) // step) + 1
+
+
+## Removed legacy frame-only worker; real pipeline worker is now a pure function for ProcessPool
+
+
+def worker_run_range(vpath: str, start_f: int, end_f: int, pipeline_cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Pure, pickle-safe worker: initialize pipeline lazily and return serialized events for range."""
+    from app.services.pipeline_service import ActivityPipeline
+    pipe = ActivityPipeline(**pipeline_cfg)
+    try:
+        evts = pipe.process_video_range(vpath, start_f, end_f, progress_cb=None)
+    except Exception:
+        evts = []
+    return [e.model_dump() if hasattr(e, "model_dump") else e for e in (evts or [])]
+
 @ui_bp.get("/")
 def index():
     return render_template("index.html")
@@ -115,6 +185,7 @@ def start():
     try:
         # Prefill total for immediate UI feedback
         pref_total = int(get_expected_sampled_frames(video_path, 1))
+        logger.info(f"[Flask] start: pref_total={pref_total}")
         if pref_total <= 0:
             dur = _ffprobe_duration_seconds(video_path)
             pref_total = int(math.ceil(dur)) if dur > 0 else 0
@@ -127,10 +198,22 @@ def start():
         state = JOBS.get(jid)
         logger.info(f"[Flask] _run_job start jid={jid}, has_state={bool(state)}")
         try:
-            # Lazily import heavy pipeline to avoid expensive module imports during app startup
+            video_path = state["video_path"]
+            num_processes = max(1, min((mp.cpu_count() or 1), 10))
+            # Use expected sampled frames for progress denominator
+            try:
+                total_sampled = int(get_expected_sampled_frames(video_path, 1))
+            except Exception:
+                total_sampled = _count_total_frames(video_path)
+            state["total"] = int(total_sampled)
+            _persist_state(jid, state)
+            total_frames = _count_total_frames(video_path)
+            if total_frames <= 0:
+                raise RuntimeError("Video has zero frames or cannot be read")
+
+            # Initialize pipeline once to reuse config across processes
             from app.services.pipeline_service import ActivityPipeline
-            logger.info("[Flask] ActivityPipeline import OK")
-            pipeline = ActivityPipeline(
+            pipeline_cfg = dict(
                 trip_id=state["trip_id"],
                 crew_name="demo",
                 crew_id="1",
@@ -144,7 +227,6 @@ def start():
                 sleep_min_duration=10.0,
                 sleep_micro_max_min=0.25,
                 save_debug_overlays=True,
-                # Pin advanced sleep thresholds for consistency across environments
                 sleep_cfg_short_window_s=4.0,
                 sleep_cfg_mid_window_s=30.0,
                 sleep_cfg_long_window_s=120.0,
@@ -160,20 +242,46 @@ def start():
                 sleep_cfg_no_eye_head_down_deg=32.0,
             )
 
-            def _progress(ev: Dict[str, Any]):
-                state["processed"] = int(ev.get("processed", state.get("processed", 0)))
-                state["total"] = int(ev.get("total", state.get("total", 0)))
-                _persist_state(jid, state)
-                logger.debug(f"[Flask] progress jid={jid} {state['processed']}/{state['total']}")
+            ranges = _split_frame_ranges(total_frames, num_processes)
+            # Estimate expected sampled frames per range for progress aggregation
+            per_range_expected = [
+                _expected_sampled_in_range(video_path, int(pipeline_cfg.get("sample_fps", 1)), s, e)
+                for (s, e) in ranges
+            ]
+            total_expected = sum(per_range_expected)
+            state["total"] = int(total_expected or state.get("total", 0))
+            _persist_state(jid, state)
 
-            events: List[ActivityEvent] = pipeline.process_video(state["video_path"], progress_cb=_progress)
+            t0 = time.perf_counter()
+            all_events: List[Dict[str, Any]] = []
+            completed_expected = 0
+            with cf.ProcessPoolExecutor(max_workers=num_processes, mp_context=mp.get_context("spawn")) as pool:
+                futures = []
+                for idx, (start_f, end_f) in enumerate(ranges):
+                    if start_f >= end_f:
+                        continue
+                    futures.append((idx, per_range_expected[idx], pool.submit(worker_run_range, video_path, start_f, end_f, pipeline_cfg)))
 
+                for idx, expected_cnt, fut in futures:
+                    try:
+                        part = fut.result()
+                        if isinstance(part, list):
+                            all_events.extend(part)
+                        else:
+                            all_events.append(part)
+                    except Exception:
+                        part = []
+                    finally:
+                        completed_expected += int(expected_cnt)
+                        state["processed"] = int(completed_expected)
+                        _persist_state(jid, state)
+
+            # Persist output assets to repo output/<timestamp> like original flow
             try:
                 tmp_output_dir = os.path.join(os.path.dirname(state["video_path"]), "output")
                 if os.path.isdir(tmp_output_dir):
                     from datetime import datetime
                     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    # Compute repo root from file path to avoid needing app context in thread
                     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
                     dest_root = os.path.join(repo_root, "output", stamp)
                     os.makedirs(dest_root, exist_ok=True)
@@ -184,7 +292,6 @@ def start():
                             shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
                         else:
                             shutil.copy2(src_path, dst_path)
-                    logger.info(f"[Flask] Persisted activity assets to {dest_root}")
                     state["asset_root"] = dest_root
                 else:
                     state["asset_root"] = None
@@ -192,10 +299,12 @@ def start():
                 logger.warning(f"[Flask] Failed to persist activity assets: {persist_err}")
                 state["asset_root"] = None
 
-            logger.info(f"[Flask] Found {len(events)} events")
-            state["events"] = [e.model_dump() for e in events]
+            elapsed = time.perf_counter() - t0
+            state["processed"] = int(completed_expected)
             state["done"] = True
+            state["events"] = all_events
             _persist_state(jid, state)
+            logger.info(f"[Flask] Parallel pipeline completed in {elapsed:.2f}s: {state['processed']}/{state['total']} (events={len(all_events)})")
         except Exception as e:
             logger.exception(f"[Flask] _run_job crashed jid={jid}: {e}")
             if state is None:
@@ -303,7 +412,11 @@ def media(job_id: str, filename: str):
     # Resolve and validate path
     abs_root = os.path.abspath(root)
     file_path = os.path.abspath(os.path.join(abs_root, filename))
-    if not file_path.startswith(abs_root + os.sep) and file_path != abs_root:
+    try:
+        # commonpath raises on different drives; guard with try
+        if os.path.commonpath([abs_root, file_path]) != abs_root:
+            return jsonify({"error": "file_missing"}), 404
+    except Exception:
         return jsonify({"error": "file_missing"}), 404
     if not os.path.isfile(file_path):
         return jsonify({"error": "file_missing"}), 404

@@ -70,5 +70,26 @@ def get_expected_sampled_frames(video_path: str, sample_fps: int) -> int:
     return ((total_frames - 1) // step) + 1 if total_frames > 0 else 0
 
 
+def get_expected_sampled_frames_in_range(video_path: str, sample_fps: int, start_frame: int, end_frame: int) -> int:
+    """Estimate number of sampled frames within [start_frame, end_frame).
+
+    Mirrors the logic used by sample_video_frames for consistent step size.
+    """
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return 0
+    native_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    step = max(1, int(round(native_fps / max(1, sample_fps))))
+    cap.release()
+    lo = max(0, int(start_frame))
+    hi = max(0, int(end_frame))
+    if hi <= lo:
+        return 0
+    first = ((lo + step - 1) // step) * step
+    if first >= hi:
+        return 0
+    return ((hi - 1 - first) // step) + 1
+
+
 # Module import log
 logger.debug(f"[{__name__}] module loaded")
