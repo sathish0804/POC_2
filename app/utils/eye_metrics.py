@@ -1,5 +1,6 @@
 from typing import Dict, Any, Optional, Tuple, List
 import math
+from loguru import logger
 
 
 def _dist(p1: Tuple[float, float], p2: Tuple[float, float]) -> float:
@@ -83,5 +84,9 @@ def eye_open_probability(ear: Optional[float], ear_open: float = 0.28, ear_close
     # Linear interpolation
     span = max(1e-6, ear_open - ear_closed)
     return (ear - ear_closed) / span
+
+
+# Module import log
+logger.debug(f"[{__name__}] module loaded")
 
 

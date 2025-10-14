@@ -34,7 +34,22 @@ tar xzf /tmp/poc2.tgz -C "$APP_DIR"
 
 python3 -m venv "$APP_DIR/venv"
 "$APP_DIR/venv/bin/pip" install --upgrade pip setuptools wheel
-"$APP_DIR/venv/bin/pip" install -r "$APP_DIR/requirements.txt"
+# Ensure only headless OpenCV is installed (avoid VideoCapture conflicts)
+"$APP_DIR/venv/bin/pip" uninstall -y opencv-python opencv-contrib-python opencv-python-headless || true
+
+# Install base requirements except mediapipe/ultralytics first
+grep -viE '^(mediapipe|ultralytics|ultralytics-thop)(==.*)?$' "$APP_DIR/requirements.txt" > "$APP_DIR/requirements.base.txt"
+"$APP_DIR/venv/bin/pip" install -r "$APP_DIR/requirements.base.txt"
+
+# Ensure headless OpenCV is present
+"$APP_DIR/venv/bin/pip" install opencv-contrib-python-headless==4.11.0.86
+
+# Now install mediapipe and ultralytics without pulling their deps (to avoid non-headless OpenCV)
+grep -iE '^(mediapipe|ultralytics|ultralytics-thop)(==.*)?$' "$APP_DIR/requirements.txt" > "$APP_DIR/requirements.ml.txt"
+while read -r pkg; do
+  [ -z "$pkg" ] && continue
+  "$APP_DIR/venv/bin/pip" install --no-deps "$pkg"
+done < "$APP_DIR/requirements.ml.txt"
 
 cat >/etc/systemd/system/poc2.service <<'UNIT'
 [Unit]

@@ -1,5 +1,6 @@
 from typing import List, Tuple, Dict, Any, Optional
 import numpy as np
+from loguru import logger
 
 from utils.geometry import compute_eye_aspect_ratio, iou, bbox_from_points, bbox_center, point_in_box
 
@@ -37,6 +38,7 @@ class ActivityClassifier:
         self._last_hand_centers: Optional[List[tuple]] = None
         self._last_head_center: Optional[tuple] = None
         self._last_ts: Optional[float] = None
+        logger.debug("[ActivityClassifier] initialized")
 
     def classify_frame(
         self,
@@ -129,6 +131,10 @@ class ActivityClassifier:
                 activities.append((7, "Signal exchange with flag: flag present and hand interacts.", 1))
 
         return activities
+
+
+# Module import log
+logger.debug(f"[{__name__}] module loaded")
 
     # ----- Helpers -----
     def _estimate_eye_closure_and_head(self, mp_out: Dict[str, Any]) -> tuple:

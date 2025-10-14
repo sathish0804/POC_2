@@ -1,6 +1,7 @@
 from typing import List, Tuple, Optional
 import numpy as np
 from ultralytics import YOLO
+from loguru import logger
 
 
 class YoloService:
@@ -11,6 +12,7 @@ class YoloService:
         self.model.to('cpu')
         self.conf = conf
         self.iou = iou
+        logger.debug(f"[YoloService] model loaded from {weights_path}, conf={conf}, iou={iou}")
 
     def detect(self, image_bgr: np.ndarray) -> List[Tuple[int, float, Tuple[float, float, float, float]]]:
         """Run detection and return list of (class_id, score, (x1,y1,x2,y2))."""
@@ -39,3 +41,7 @@ class YoloService:
             return self.model.names.get(class_id)
         except Exception:
             return None
+
+
+# Module import log
+logger.debug(f"[{__name__}] module loaded")

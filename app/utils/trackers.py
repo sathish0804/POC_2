@@ -1,5 +1,6 @@
 from typing import Dict, Any, List, Optional, Tuple
 import numpy as np
+from loguru import logger
 
 from app.utils.geometry import iou as iou_xyxy
 
@@ -10,6 +11,7 @@ class SimpleTracker:
         self.ttl_s = float(ttl_s)
         self._next_id = 1
         self._tracks: Dict[int, Dict[str, Any]] = {}
+        logger.debug(f"[SimpleTracker] created thresh={self.iou_match_thresh}, ttl={self.ttl_s}")
 
     def _match_track(self, box: np.ndarray, ts: float, used_track_ids: set) -> Optional[int]:
         best_id = None
@@ -64,6 +66,7 @@ class SleepTracker:
         self.micro_max_s = float(micro_max_s)
         self.min_duration_s = float(min_duration_s)
         self._state: Dict[int, Dict[str, Any]] = {}
+        logger.debug(f"[SleepTracker] thresholds eye={self.eye_thresh}, head={self.head_down_deg_thresh}, min_dur={self.min_duration_s}")
 
     def _should_sleep(self, eye_openness: Optional[float], head_down_angle_deg: Optional[float], engaged: bool) -> bool:
         if engaged:
@@ -136,6 +139,10 @@ class SleepTracker:
                     })
             self._state[track_id] = {"active": False, "start_ts": None}
         return events
+
+
+# Module import log
+logger.debug(f"[{__name__}] module loaded")
 
 
 class ActivityHeuristicTracker:

@@ -1,5 +1,6 @@
 from typing import Optional, Tuple
 import re
+from loguru import logger
 
 try:
     import easyocr  # type: ignore
@@ -27,6 +28,7 @@ class OcrUtils:
         if easyocr is not None:
             try:
                 self.reader = easyocr.Reader(['en'], gpu=False)
+                logger.debug("[OcrUtils] EasyOCR initialized")
             except Exception:
                 self.reader = None
 
@@ -39,7 +41,8 @@ class OcrUtils:
                 pass
         if pytesseract is not None:
             try:
-                return pytesseract.image_to_string(image_bgr)
+                txt = pytesseract.image_to_string(image_bgr)
+                return txt
             except Exception:
                 pass
         return ""
@@ -51,3 +54,7 @@ class OcrUtils:
         date_str = date_match.group(0) if date_match else ""
         time_str = time_match.group(0) if time_match else ""
         return date_str, time_str
+
+
+# Module import log
+logger.debug(f"[{__name__}] module loaded")

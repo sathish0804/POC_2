@@ -3,6 +3,7 @@ import os
 import shutil
 import subprocess
 import cv2
+from loguru import logger
 
 
 def extract_clip(video_path: str, center_ts: float, out_dir: str, tag: str, duration_s: float = 4.0) -> Optional[str]:
@@ -26,6 +27,7 @@ def extract_clip(video_path: str, center_ts: float, out_dir: str, tag: str, dura
             ]
             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if os.path.isfile(out_path):
+                logger.debug(f"[clip_utils] ffmpeg clip created {out_name}")
                 return out_name
         except Exception:
             pass
@@ -54,7 +56,10 @@ def extract_clip(video_path: str, center_ts: float, out_dir: str, tag: str, dura
             frame_idx += 1
         writer.release()
         cap.release()
-        return out_name if os.path.isfile(out_path) else None
+        ok = os.path.isfile(out_path)
+        if ok:
+            logger.debug(f"[clip_utils] opencv clip created {out_name}")
+        return out_name if ok else None
     except Exception:
         return None
 

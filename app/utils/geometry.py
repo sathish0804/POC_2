@@ -1,5 +1,6 @@
 from typing import List, Tuple
 import math
+from loguru import logger
 
 
 Point = Tuple[float, float]
@@ -80,3 +81,7 @@ def point_in_box(pt: Point, box: BBox) -> bool:
     x, y = pt
     x1, y1, x2, y2 = box
     return (x1 <= x <= x2) and (y1 <= y <= y2)
+
+
+# Module import log
+logger.debug(f"[{__name__}] module loaded")

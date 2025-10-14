@@ -1,6 +1,7 @@
 from typing import Optional
 import os
 from flask import Flask
+from loguru import logger
 
 from .config import get_config
 from .extensions import init_extensions
@@ -17,5 +18,9 @@ def create_app(config_name: Optional[str] = None) -> Flask:
     app.register_blueprint(health_bp, url_prefix="/health")
     app.register_blueprint(ui_bp)
     return app
+
+
+# Module import log
+logger.debug(f"[{__name__}] module loaded")
 
 

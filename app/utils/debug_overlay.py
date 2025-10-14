@@ -1,6 +1,7 @@
 from typing import List, Tuple
 import os
 import cv2
+from loguru import logger
 
 
 def _draw_text_block(img, lines: List[str], origin: Tuple[int, int] = (10, 30)) -> None:
@@ -36,6 +37,7 @@ def save_debug_overlay(frame_bgr, lines: List[str], tag: str, out_dir: str, subd
     _draw_text_block(img, lines, origin=(10, 30))
     out_path = os.path.join(out_dir, subdir, f"{tag}_debug.jpg")
     cv2.imwrite(out_path, img)
+    logger.debug(f"[debug_overlay] saved {out_path}")
     return out_path
 
 

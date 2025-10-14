@@ -11,10 +11,70 @@ from flask import Blueprint, current_app, render_template, request, redirect, ur
 import mimetypes
 from app.models.activity_event import ActivityEvent
 from loguru import logger
+import json
+from pathlib import Path
+import subprocess
+import math
+import time
+from app.utils.video_utils import get_expected_sampled_frames
 
 
 ui_bp = Blueprint("ui", __name__)
 JOBS: Dict[str, Dict[str, Any]] = {}
+
+# Persist lightweight job state to survive worker restarts
+STATE_DIR = Path(__file__).resolve().parents[2] / "output" / "state"
+STATE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _state_path(job_id: str) -> Path:
+    return STATE_DIR / f"{job_id}.json"
+
+
+def _persist_state(job_id: str, state: Dict[str, Any]) -> None:
+    tmp_path = _state_path(job_id).with_suffix(".json.tmp")
+    with tmp_path.open("w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "processed": int(state.get("processed", 0)),
+                "total": int(state.get("total", 0)),
+                "done": bool(state.get("done", False)),
+                "error": state.get("error"),
+                "trip_id": state.get("trip_id"),
+                "asset_root": state.get("asset_root"),
+            },
+            f,
+        )
+    tmp_path.replace(_state_path(job_id))
+
+
+def _load_state(job_id: str) -> Dict[str, Any] | None:
+    path = _state_path(job_id)
+    if not path.exists():
+        return None
+
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+def _ffprobe_duration_seconds(video_path: str) -> float:
+    """Fast duration probe via ffprobe; returns seconds or 0.0 on failure."""
+    try:
+        # Using json output keeps parsing simple and robust
+        out = subprocess.check_output([
+            "ffprobe",
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "json",
+            video_path,
+        ], stderr=subprocess.STDOUT, text=True)
+        data = json.loads(out)
+        dur = float(data.get("format", {}).get("duration", 0.0) or 0.0)
+        return max(0.0, dur)
+    except Exception:
+        return 0.0
 
 
 @ui_bp.get("/")
@@ -52,6 +112,16 @@ def start():
         "events": None,
         "asset_root": None,
     }
+    try:
+        # Prefill total for immediate UI feedback
+        pref_total = int(get_expected_sampled_frames(video_path, 1))
+        if pref_total <= 0:
+            dur = _ffprobe_duration_seconds(video_path)
+            pref_total = int(math.ceil(dur)) if dur > 0 else 0
+        JOBS[job_id]["total"] = max(0, pref_total)
+    except Exception:
+        JOBS[job_id]["total"] = 0
+    _persist_state(job_id, JOBS[job_id])
 
     def _run_job(jid: str) -> None:
         state = JOBS.get(jid)
@@ -79,6 +149,7 @@ def start():
             def _progress(ev: Dict[str, Any]):
                 state["processed"] = int(ev.get("processed", state.get("processed", 0)))
                 state["total"] = int(ev.get("total", state.get("total", 0)))
+                _persist_state(jid, state)
 
             events: List[ActivityEvent] = pipeline.process_video(state["video_path"], progress_cb=_progress)
 
@@ -109,9 +180,11 @@ def start():
             logger.info(f"[Flask] Found {len(events)} events")
             state["events"] = [e.model_dump() for e in events]
             state["done"] = True
+            _persist_state(jid, state)
         except Exception as e:
             state["error"] = str(e)
             state["done"] = True
+            _persist_state(jid, state)
         finally:
             try:
                 shutil.rmtree(state.get("tmp_dir", ""))
@@ -133,14 +206,33 @@ def job(job_id: str):
 @ui_bp.get("/progress/<job_id>")
 def progress(job_id: str):
     state = JOBS.get(job_id)
+    logger.info(f"[Flask] Progress requested for job {job_id}, state: {state}")
     if not state:
-        return jsonify({"error": "not_found"}), 404
+        persisted = _load_state(job_id)
+        logger.info(f"[Flask] Progress requested for job {job_id}, persisted: {persisted}")
+        if not persisted:
+            # Brief retry to smooth over file replace/poll races or initial write
+            time.sleep(0.05)
+            persisted = _load_state(job_id)
+            logger.info(f"[Flask] Progress requested for job {job_id}, persisted: {persisted}")
+            if not persisted:
+                # Soft-404: return 200 so client keeps polling without breaking
+                return jsonify({
+                    "processed": 0,
+                    "total": 0,
+                    "done": False,
+                    "error": None,
+                    "notFound": True,
+                }), 200
+        JOBS[job_id] = persisted
+        state = persisted
+    logger.info(f"[Flask] Progress requested for job {job_id}, state: {state}")
     return jsonify({
         "processed": int(state.get("processed", 0)),
         "total": int(state.get("total", 0)),
         "done": bool(state.get("done", False)),
         "error": state.get("error"),
-    })
+    })  
 
 
 @ui_bp.get("/results/<job_id>")

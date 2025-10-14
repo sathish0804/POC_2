@@ -1,6 +1,7 @@
 from typing import List, Tuple
 import cv2
 import numpy as np
+from loguru import logger
 
 
 BBox = Tuple[int, int, int, int]
@@ -43,3 +44,5 @@ def detect_window_regions(
     return boxes
 
 
+# Module import log
+logger.debug(f"[{__name__}] module loaded")

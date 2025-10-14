@@ -2,6 +2,7 @@ from typing import Dict, Any, Optional, Deque, Tuple
 from collections import deque
 from dataclasses import dataclass
 import math
+from loguru import logger
 
 from .filters import Ewma
 
@@ -65,6 +66,7 @@ class SleepDecisionMachineV2:
     def __init__(self, cfg: Optional[SleepDecisionConfigV2] = None):
         self.cfg = cfg or SleepDecisionConfigV2()
         self._tracks: Dict[int, Dict[str, Any]] = {}
+        logger.debug("[SleepDecisionMachineV2] initialized")
 
     def _ensure(self, track_id: int) -> Dict[str, Any]:
         st = self._tracks.get(track_id)
@@ -473,6 +475,7 @@ class SleepDecisionMachine:
             no_eye_pitch_sleep_deg=max(cfg.no_eye_head_down_deg, 40.0),
         )
         self._impl = SleepDecisionMachineV2(v2cfg)
+        logger.debug("[SleepDecisionMachine] adapter initialized")
 
     def update(self, **kwargs):
         res = self._impl.update(**kwargs)
@@ -483,3 +486,7 @@ class SleepDecisionMachine:
 
     def get_debug(self, track_id: int, now_ts: float) -> Dict[str, Any]:
         return self._impl.get_debug(track_id, now_ts)
+
+
+# Module import log
+logger.debug(f"[{__name__}] module loaded")

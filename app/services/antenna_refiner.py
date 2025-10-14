@@ -3,6 +3,7 @@ import os
 import math
 import numpy as np
 import cv2
+from loguru import logger
 
 try:
     from ultralytics import YOLO
@@ -44,6 +45,7 @@ class AntennaRefiner:
             try:
                 self.model = YOLO(yolo_weights)
                 self.model.overrides["conf"] = conf
+                logger.debug("[AntennaRefiner] YOLO model initialized for antenna detection")
             except Exception:
                 self.model = None
 
@@ -136,3 +138,7 @@ class AntennaRefiner:
                 ev.update({"roi": [rx1, ry1, rx2, ry2]})
                 return True, ev
         return False, {"reason": "no_antenna_detected", "roi": [rx1, ry1, rx2, ry2]}
+
+
+# Module import log
+logger.debug(f"[{__name__}] module loaded")

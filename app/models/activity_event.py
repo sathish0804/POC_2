@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
+from loguru import logger
 
 
 class ActivityEvent(BaseModel):
@@ -25,3 +26,7 @@ class ActivityEvent(BaseModel):
     activityImage: Optional[str] = Field(default=None)
     # Optional: short MP4 clip around the event timestamp (for sleep/micro-sleep)
     activityClip: Optional[str] = Field(default=None)
+
+
+# Module import log
+logger.debug(f"[{__name__}] module loaded")

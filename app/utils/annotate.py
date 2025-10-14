@@ -1,6 +1,7 @@
 from typing import Dict, Any, List
 import os
 import cv2
+from loguru import logger
 
 
 def ensure_dir(path: str) -> None:
@@ -30,3 +31,8 @@ def annotate_and_save(frame_bgr, result: Dict[str, Any], tag: str, out_dir: str)
         draw_box(out, act.get("person_bbox"), (0, 165, 255), f"person_{act.get('person_id')}")
     ensure_dir(out_dir)
     cv2.imwrite(os.path.join(out_dir, f"{tag}_activity.jpg"), out)
+    logger.debug(f"[annotate] saved {tag}_activity.jpg to {out_dir}")
+
+
+# Module import log
+logger.debug(f"[{__name__}] module loaded")

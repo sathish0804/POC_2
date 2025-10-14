@@ -1,5 +1,6 @@
 from typing import Dict, Tuple, List, Optional
 import math
+from loguru import logger
 
 Point = Tuple[float, float]
 Rect = Tuple[float, float, float, float]
@@ -105,3 +106,7 @@ def infer_phone_usage_from_landmarks(
                         "device_type": "walkie_talkie",
                     }
     return False, {"reason": "no_hand_near_face_zones"}
+
+
+# Module import log
+logger.debug(f"[{__name__}] module loaded")

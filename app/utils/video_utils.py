@@ -1,6 +1,7 @@
 from typing import Generator, Tuple
 import cv2
 import os
+from loguru import logger
 
 
 def sample_video_frames(video_path: str, sample_fps: int) -> Generator[Tuple[int, float, any], None, None]:
@@ -13,6 +14,7 @@ def sample_video_frames(video_path: str, sample_fps: int) -> Generator[Tuple[int
         raise RuntimeError(f"Failed to open video: {video_path}")
     native_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     step = max(1, int(round(native_fps / max(1, sample_fps))))
+    logger.debug(f"[video_utils] open {video_path}, fps={native_fps:.2f}, step={step}")
 
     frame_idx = 0
     sampled_idx = 0
@@ -26,6 +28,7 @@ def sample_video_frames(video_path: str, sample_fps: int) -> Generator[Tuple[int
             sampled_idx += 1
         frame_idx += 1
     cap.release()
+    logger.debug(f"[video_utils] completed sampling for {video_path}")
 
 
 def get_video_filename(video_path: str) -> str:
@@ -65,3 +68,7 @@ def get_expected_sampled_frames(video_path: str, sample_fps: int) -> int:
     # Number of frames we would read that satisfy frame_idx % step == 0 in [0, total_frames)
     # This is ceil(total_frames / step) but since index starts at 0, it's ((total_frames - 1) // step) + 1
     return ((total_frames - 1) // step) + 1 if total_frames > 0 else 0
+
+
+# Module import log
+logger.debug(f"[{__name__}] module loaded")

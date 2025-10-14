@@ -1,6 +1,7 @@
 import json
 import os
 from typing import List
+from loguru import logger
 
 from models.activity_event import ActivityEvent
 
@@ -14,3 +15,8 @@ def write_events_to_json(events: List[ActivityEvent], out_path: str) -> None:
     payload = [e.model_dump() for e in events]
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
+    logger.info(f"[events_writer] wrote {len(events)} events to {out_path}")
+
+
+# Module import log
+logger.debug(f"[{__name__}] module loaded")
