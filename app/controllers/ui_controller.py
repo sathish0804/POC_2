@@ -125,11 +125,11 @@ def start():
 
     def _run_job(jid: str) -> None:
         state = JOBS.get(jid)
-        if not state:
-            return
+        logger.info(f"[Flask] _run_job start jid={jid}, has_state={bool(state)}")
         try:
             # Lazily import heavy pipeline to avoid expensive module imports during app startup
             from app.services.pipeline_service import ActivityPipeline
+            logger.info("[Flask] ActivityPipeline import OK")
             pipeline = ActivityPipeline(
                 trip_id=state["trip_id"],
                 crew_name="demo",
@@ -150,6 +150,7 @@ def start():
                 state["processed"] = int(ev.get("processed", state.get("processed", 0)))
                 state["total"] = int(ev.get("total", state.get("total", 0)))
                 _persist_state(jid, state)
+                logger.debug(f"[Flask] progress jid={jid} {state['processed']}/{state['total']}")
 
             events: List[ActivityEvent] = pipeline.process_video(state["video_path"], progress_cb=_progress)
 
@@ -182,6 +183,10 @@ def start():
             state["done"] = True
             _persist_state(jid, state)
         except Exception as e:
+            logger.exception(f"[Flask] _run_job crashed jid={jid}: {e}")
+            if state is None:
+                state = {"processed": 0, "total": 0}
+                JOBS[jid] = state
             state["error"] = str(e)
             state["done"] = True
             _persist_state(jid, state)
@@ -191,7 +196,9 @@ def start():
             except Exception:
                 pass
 
-    threading.Thread(target=_run_job, args=(job_id,), daemon=True).start()
+    t = threading.Thread(target=_run_job, args=(job_id,), daemon=False)
+    t.start()
+    logger.info(f"[Flask] Started background job thread for {job_id}, ident={t.ident}")
     return redirect(url_for("ui.job", job_id=job_id))
 
 
@@ -205,34 +212,25 @@ def job(job_id: str):
 
 @ui_bp.get("/progress/<job_id>")
 def progress(job_id: str):
-    state = JOBS.get(job_id)
-    logger.info(f"[Flask] Progress requested for job {job_id}, state: {state}")
-    if not state:
+    persisted = _load_state(job_id)
+    if not persisted:
+        time.sleep(0.05)
         persisted = _load_state(job_id)
-        logger.info(f"[Flask] Progress requested for job {job_id}, persisted: {persisted}")
         if not persisted:
-            # Brief retry to smooth over file replace/poll races or initial write
-            time.sleep(0.05)
-            persisted = _load_state(job_id)
-            logger.info(f"[Flask] Progress requested for job {job_id}, persisted: {persisted}")
-            if not persisted:
-                # Soft-404: return 200 so client keeps polling without breaking
-                return jsonify({
-                    "processed": 0,
-                    "total": 0,
-                    "done": False,
-                    "error": None,
-                    "notFound": True,
-                }), 200
-        JOBS[job_id] = persisted
-        state = persisted
-    logger.info(f"[Flask] Progress requested for job {job_id}, state: {state}")
+            return jsonify({
+                "processed": 0,
+                "total": 0,
+                "done": False,
+                "error": None,
+                "notFound": True,
+            }), 200
+
     return jsonify({
-        "processed": int(state.get("processed", 0)),
-        "total": int(state.get("total", 0)),
-        "done": bool(state.get("done", False)),
-        "error": state.get("error"),
-    })  
+        "processed": int(persisted.get("processed", 0)),
+        "total": int(persisted.get("total", 0)),
+        "done": bool(persisted.get("done", False)),
+        "error": persisted.get("error"),
+    })
 
 
 @ui_bp.get("/results/<job_id>")
