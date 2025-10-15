@@ -34,7 +34,10 @@ def _state_path(job_id: str) -> Path:
 
 
 def _persist_state(job_id: str, state: Dict[str, Any]) -> None:
-    tmp_path = _state_path(job_id).with_suffix(".json.tmp")
+    # Ensure parent directory exists at write-time (defensive in case import-time mkdir didn't run)
+    target_path = _state_path(job_id)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = target_path.with_suffix(".json.tmp")
     with tmp_path.open("w", encoding="utf-8") as f:
         json.dump(
             {
@@ -47,7 +50,7 @@ def _persist_state(job_id: str, state: Dict[str, Any]) -> None:
             },
             f,
         )
-    tmp_path.replace(_state_path(job_id))
+    tmp_path.replace(target_path)
 
 
 def _load_state(job_id: str) -> Dict[str, Any] | None:
@@ -139,6 +142,22 @@ def _expected_sampled_in_range(video_path: str, sample_fps: int, start_frame: in
 
 def worker_run_range(vpath: str, start_f: int, end_f: int, pipeline_cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Pure, pickle-safe worker: initialize pipeline lazily and return serialized events for range."""
+    import os
+    try:
+        import torch
+        torch.set_num_threads(int(os.getenv("TORCH_NUM_THREADS", "1")))
+        torch.set_num_interop_threads(int(os.getenv("TORCH_NUM_INTEROP_THREADS", "1")))
+    except Exception:
+        pass
+    try:
+        import cv2
+        cv2.setNumThreads(int(os.getenv("OPENCV_NUM_THREADS", "1")))
+        try:
+            cv2.ocl.setUseOpenCL(False)
+        except Exception:
+            pass
+    except Exception:
+        pass
     from app.services.pipeline_service import ActivityPipeline
     pipe = ActivityPipeline(**pipeline_cfg)
     try:
@@ -199,7 +218,7 @@ def start():
         logger.info(f"[Flask] _run_job start jid={jid}, has_state={bool(state)}")
         try:
             video_path = state["video_path"]
-            num_processes = max(1, min((mp.cpu_count() or 1), 10))
+            num_processes = max(1, min(int(os.getenv("POOL_PROCS", "6")), (mp.cpu_count() or 1)))
             # Use expected sampled frames for progress denominator
             try:
                 total_sampled = int(get_expected_sampled_frames(video_path, 1))
@@ -226,7 +245,7 @@ def start():
                 use_advanced_sleep=True,
                 sleep_min_duration=10.0,
                 sleep_micro_max_min=0.25,
-                save_debug_overlays=True,
+                save_debug_overlays=0,
                 sleep_cfg_short_window_s=4.0,
                 sleep_cfg_mid_window_s=30.0,
                 sleep_cfg_long_window_s=120.0,
@@ -327,9 +346,7 @@ def start():
 
 @ui_bp.get("/job/<job_id>")
 def job(job_id: str):
-    if job_id not in JOBS:
-        flash("Invalid job id", "error")
-        return redirect(url_for("ui.index"))
+    # Allow page to load even if in-memory state is missing; progress polling relies on persisted state
     return render_template("job.html", job_id=job_id)
 
 

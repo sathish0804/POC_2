@@ -775,10 +775,12 @@ class ActivityPipeline:
                 ],
                 "activities": per_frame_activities,
             }
-            try:
-                annotate_and_save(frame_bgr, result_for_annot, tag=tag_base, out_dir=os.path.join(os.path.dirname(video_path), "output"))
-            except Exception:
-                pass
+            # Write overlays/images only when debugging or when activities are present
+            if self.save_debug_overlays or per_frame_activities:
+                try:
+                    annotate_and_save(frame_bgr, result_for_annot, tag=tag_base, out_dir=os.path.join(os.path.dirname(video_path), "output"))
+                except Exception:
+                    pass
 
             # Use shared mapping helper
             def _map_activity(label: str) -> Tuple[int, str]:
@@ -1509,10 +1511,12 @@ class ActivityPipeline:
                         ],
                         "activities": per_frame_activities,
                     }
-                    try:
-                        annotate_and_save(frame_bgr, result_for_annot, tag=tag_base, out_dir=os.path.join(os.path.dirname(video_path), "output"))
-                    except Exception:
-                        pass
+                    # Write overlays/images only when debugging or when activities are present
+                    if self.save_debug_overlays or per_frame_activities:
+                        try:
+                            annotate_and_save(frame_bgr, result_for_annot, tag=tag_base, out_dir=os.path.join(os.path.dirname(video_path), "output"))
+                        except Exception:
+                            pass
 
                     # Use shared mapping helper
                     def _map_activity(label: str) -> Tuple[int, str]:

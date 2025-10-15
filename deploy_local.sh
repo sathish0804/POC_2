@@ -67,8 +67,11 @@ except Exception as e:
 PY
 "$APP_DIR/venv/bin/python" "$APP_DIR/_import_check.py"
 
-# Systemd unit (unchanged if you already have it)
-cat >/etc/systemd/system/poc2.service <<'UNIT'
+# Derive pool size from CPU count
+POOL_PROCS=$( (command -v nproc >/dev/null 2>&1 && nproc) || (getconf _NPROCESSORS_ONLN) || echo 4 )
+
+# Systemd unit (values templated)
+cat >/etc/systemd/system/poc2.service <<UNIT
 [Unit]
 Description=POC_2 Gunicorn Service
 After=network.target
@@ -80,6 +83,15 @@ WorkingDirectory=/opt/poc2
 Environment=PYTHONUNBUFFERED=1
 Environment=FLASK_ENV=production
 Environment=CUDA_VISIBLE_DEVICES=
+Environment=OMP_NUM_THREADS=1
+Environment=OPENBLAS_NUM_THREADS=1
+Environment=MKL_NUM_THREADS=1
+Environment=NUMEXPR_NUM_THREADS=1
+Environment=OPENCV_NUM_THREADS=1
+Environment=TORCH_NUM_THREADS=1
+Environment=TORCH_NUM_INTEROP_THREADS=1
+Environment=POOL_PROCS=${POOL_PROCS}
+Environment=SAVE_DEBUG_OVERLAYS=0
 ExecStart=/opt/poc2/venv/bin/gunicorn -c gunicorn.conf.py wsgi:app
 Restart=always
 RestartSec=5
