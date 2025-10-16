@@ -12,6 +12,11 @@ class YoloService:
         self.model.to('cpu')
         self.conf = conf
         self.iou = iou
+        # Allow configurable inference resolution for speed/accuracy tradeoff on CPU
+        try:
+            self.imgsz =  640
+        except Exception:
+            self.imgsz = 640
         logger.debug(f"[YoloService] model loaded from {weights_path}, conf={conf}, iou={iou}")
 
     def detect(self, image_bgr: np.ndarray) -> List[Tuple[int, float, Tuple[float, float, float, float]]]:
@@ -21,7 +26,8 @@ class YoloService:
             conf=self.conf,
             iou=self.iou,
             verbose=False,
-            device='cpu'
+            device='cpu',
+            imgsz=self.imgsz,
         )
         detections: List[Tuple[int, float, Tuple[float, float, float, float]]] = []
         if not results:
@@ -35,6 +41,34 @@ class YoloService:
             x1, y1, x2, y2 = b.xyxy[0].tolist()
             detections.append((cls_id, score, (x1, y1, x2, y2)))
         return detections
+
+    def detect_batch(self, images_bgr: List[np.ndarray]) -> List[List[Tuple[int, float, Tuple[float, float, float, float]]]]:
+        """Run detection on a batch of images and return list of per-image detections.
+
+        Each element in the returned list corresponds to an input image and is a list of
+        (class_id, score, (x1,y1,x2,y2)).
+        """
+        if not images_bgr:
+            return []
+        results = self.model.predict(
+            source=images_bgr,
+            conf=self.conf,
+            iou=self.iou,
+            verbose=False,
+            device='cpu',
+            imgsz=self.imgsz,
+        )
+        batched: List[List[Tuple[int, float, Tuple[float, float, float, float]]]] = []
+        for r in results:
+            dets: List[Tuple[int, float, Tuple[float, float, float, float]]] = []
+            if getattr(r, "boxes", None) is not None:
+                for b in r.boxes:
+                    cls_id = int(b.cls.item()) if b.cls is not None else -1
+                    score = float(b.conf.item()) if b.conf is not None else 0.0
+                    x1, y1, x2, y2 = b.xyxy[0].tolist()
+                    dets.append((cls_id, score, (x1, y1, x2, y2)))
+            batched.append(dets)
+        return batched
 
     def class_name(self, class_id: int) -> Optional[str]:
         try:

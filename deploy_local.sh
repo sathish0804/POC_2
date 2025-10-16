@@ -67,7 +67,7 @@ except Exception as e:
 PY
 "$APP_DIR/venv/bin/python" "$APP_DIR/_import_check.py"
 
-# Derive pool size from CPU count
+# Derive pool size from CPU count (can be overridden below)
 POOL_PROCS=$( (command -v nproc >/dev/null 2>&1 && nproc) || (getconf _NPROCESSORS_ONLN) || echo 4 )
 
 # Systemd unit (values templated)
@@ -90,7 +90,10 @@ Environment=NUMEXPR_NUM_THREADS=1
 Environment=OPENCV_NUM_THREADS=1
 Environment=TORCH_NUM_THREADS=1
 Environment=TORCH_NUM_INTEROP_THREADS=1
-Environment=POOL_PROCS=${POOL_PROCS}
+# Hard-set recommended knobs for 12-core server; adjust as needed
+Environment=POOL_PROCS=12
+Environment=CHUNK_SECONDS=6
+Environment=YOLO_BATCH=3
 Environment=SAVE_DEBUG_OVERLAYS=0
 ExecStart=/opt/poc2/venv/bin/gunicorn -c gunicorn.conf.py wsgi:app
 Restart=always

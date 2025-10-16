@@ -1,6 +1,0 @@
-ssh root@103.195.244.67                      
-
-
-systemctl restart poc2
-
- journalctl -u poc2 -f

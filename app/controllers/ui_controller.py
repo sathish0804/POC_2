@@ -6,7 +6,6 @@ import tempfile
 import uuid
 import threading
 from typing import Dict, Any, List, Tuple
-
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
 import mimetypes
 from loguru import logger
@@ -119,6 +118,41 @@ def _split_frame_ranges(total_frames: int, num_processes: int) -> List[Tuple[int
     return ranges
 
 
+def _split_frame_ranges_by_seconds(video_path: str, chunk_seconds: float) -> List[Tuple[int, int]]:
+    """
+    Partition [0, total_frames) into contiguous ranges sized by chunk_seconds.
+    Produces many small ranges to enable better load balancing across the pool.
+    """
+    try:
+        import cv2
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            return []
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        cap.release()
+    except Exception:
+        fps = 30.0
+        total_frames = _count_total_frames(video_path)
+
+    if total_frames <= 0:
+        return []
+
+    try:
+        sec = float(chunk_seconds)
+    except Exception:
+        sec = 6.0
+    sec = max(1.0, sec)
+
+    frames_per_chunk = max(1, int(round(fps * sec)))
+    ranges: List[Tuple[int, int]] = []
+    start = 0
+    while start < total_frames:
+        end = min(total_frames, start + frames_per_chunk)
+        ranges.append((start, end))
+        start = end
+    return ranges
+
 def _expected_sampled_in_range(video_path: str, sample_fps: int, start_frame: int, end_frame: int) -> int:
     """Compute expected sampled frames in [start_frame, end_frame) using same logic as video_utils."""
     cap = cv2.VideoCapture(video_path)
@@ -230,6 +264,22 @@ def start():
             if total_frames <= 0:
                 raise RuntimeError("Video has zero frames or cannot be read")
 
+            # Ensure a valid working directory because some libs call Path.cwd() on import
+            try:
+                cur = os.getcwd()
+                if not os.path.isdir(cur):
+                    raise FileNotFoundError
+            except Exception:
+                repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+                try:
+                    os.chdir(repo_root)
+                    logger.info(f"[Flask] _run_job: reset cwd to {repo_root}")
+                except Exception as cwd_err:
+                    logger.warning(f"[Flask] _run_job: failed to reset cwd: {cwd_err}")
+                try:
+                    os.environ.setdefault("ULTRALYTICS_SETTINGS_DIR", os.path.join(repo_root, "output", ".ultralytics"))
+                except Exception:
+                    pass
             # Initialize pipeline once to reuse config across processes
             from app.services.pipeline_service import ActivityPipeline
             pipeline_cfg = dict(
@@ -237,7 +287,7 @@ def start():
                 crew_name="demo",
                 crew_id="1",
                 crew_role=1,
-                yolo_weights="yolov8l.pt",
+                yolo_weights="yolov8n.pt",
                 sample_fps=1,
                 enable_ocr=False,
                 verbose=False,
@@ -261,7 +311,18 @@ def start():
                 sleep_cfg_no_eye_head_down_deg=32.0,
             )
 
-            ranges = _split_frame_ranges(total_frames, num_processes)
+            chunk_seconds_env = os.getenv("CHUNK_SECONDS", "").strip()
+            if chunk_seconds_env:
+                try:
+                    chunk_seconds = float(chunk_seconds_env)
+                except Exception:
+                    chunk_seconds = 6.0
+            else:
+                chunk_seconds = 6.0
+
+            ranges = _split_frame_ranges_by_seconds(video_path, chunk_seconds)
+            if not ranges:
+                ranges = _split_frame_ranges(total_frames, num_processes)
             # Estimate expected sampled frames per range for progress aggregation
             per_range_expected = [
                 _expected_sampled_in_range(video_path, int(pipeline_cfg.get("sample_fps", 1)), s, e)
@@ -317,6 +378,15 @@ def start():
             except Exception as persist_err:
                 logger.warning(f"[Flask] Failed to persist activity assets: {persist_err}")
                 state["asset_root"] = None
+
+            # Persist detected events to asset_root for cross-worker results access
+            try:
+                if state.get("asset_root"):
+                    events_path = os.path.join(state["asset_root"], "events.json")
+                    with open(events_path, "w", encoding="utf-8") as f:
+                        json.dump(all_events or [], f, ensure_ascii=False, indent=2)
+            except Exception as _e:
+                logger.warning(f"[Flask] Failed to write events.json: {_e}")
 
             elapsed = time.perf_counter() - t0
             state["processed"] = int(completed_expected)
@@ -375,15 +445,28 @@ def progress(job_id: str):
 
 @ui_bp.get("/results/<job_id>")
 def results(job_id: str):
+    # Try in-memory first; fall back to persisted state so this works across workers
     state = JOBS.get(job_id)
     if not state:
-        flash("Invalid job id", "error")
-        return redirect(url_for("ui.index"))
+        persisted = _load_state(job_id)
+        if not persisted:
+            flash("Invalid job id", "error")
+            return redirect(url_for("ui.index"))
+        state = persisted
     if state.get("error"):
         flash(f"Processing failed: {state['error']}", "error")
         return redirect(url_for("ui.index"))
     events = state.get("events") or []
     trip_id = state.get("trip_id") or ""
+
+    # Fallback: load events from persisted asset_root if in-memory is missing
+    if (not events) and state.get("asset_root"):
+        try:
+            events_path = os.path.join(state["asset_root"], "events.json")
+            with open(events_path, "r", encoding="utf-8") as f:
+                events = json.load(f) or []
+        except Exception:
+            events = []
 
     try:
         page = max(1, int(request.args.get("page", 1)))
@@ -419,7 +502,8 @@ def results(job_id: str):
 
 @ui_bp.get("/media/<job_id>/<path:filename>")
 def media(job_id: str, filename: str):
-    state = JOBS.get(job_id)
+    # Support cross-worker access by falling back to persisted state
+    state = JOBS.get(job_id) or _load_state(job_id)
     if not state:
         return jsonify({"error": "not_found"}), 404
     root = state.get("asset_root")

@@ -34,6 +34,8 @@ class ActivityPipeline:
     enable_ocr: bool = True
     verbose: bool = False
     max_frames: int = 0
+    # Micro-batching knob (used in next step for YOLO batching)
+    yolo_batch: int = 1
     # Sleep thresholds
     sleep_eye_thresh: float = 0.18
     sleep_headdown_deg: float = 100.0
@@ -932,30 +934,46 @@ class ActivityPipeline:
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             return []
-        cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, int(start_frame)))
-        frame_idx = max(0, int(start_frame))
         sampled_idx = 0
 
+        # Compute the first sampled frame aligned to "step" inside [start_frame, end_frame)
+        start_frame_i = max(0, int(start_frame))
+        end_frame_i = max(0, int(end_frame))
+        first_sample = ((start_frame_i + step - 1) // step) * step
+        if first_sample >= end_frame_i:
+            cap.release()
+            return []
+
+        # Micro-batching: accumulate sampled frames and run YOLO in batches
+        yolo_bs = getattr(self, "yolo_batch", 1)
         try:
-            while frame_idx < int(end_frame):
-                ok, frame_bgr = cap.read()
-                if not ok:
-                    break
-                if (frame_idx % step) == 0:
-                    ts = frame_idx / max(1e-6, native_fps)
-                    # --- Begin: identical per-frame processing block to process_video ---
-                    frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-                    detections = yolo.detect(frame_bgr)
-                    mp_out = mp_service.process(frame_rgb)
-                    green_flags = detect_green_flags(frame_bgr)
-                    window_regions = detect_window_regions(frame_bgr)
-                    if ocr is not None:
-                        try:
-                            date_str, time_str = ocr.extract_date_time(frame_bgr)
-                        except Exception:
-                            date_str, time_str = "", ""
-                    else:
+            env_bs = os.getenv("YOLO_BATCH", "").strip()
+            if env_bs:
+                yolo_bs = max(1, int(float(env_bs)))
+        except Exception:
+            pass
+
+        def _process_batch(batch_frames, batch_meta):
+            nonlocal processed, sampled_idx
+            if not batch_frames:
+                return
+            try:
+                detections_batched = yolo.detect_batch(batch_frames) if yolo_bs and yolo_bs > 1 else [yolo.detect(img) for img in batch_frames]
+            except Exception:
+                detections_batched = [yolo.detect(img) for img in batch_frames]
+
+            for (frame_idx, ts), frame_bgr, detections in zip(batch_meta, batch_frames, detections_batched):
+                frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                mp_out = mp_service.process(frame_rgb)
+                green_flags = detect_green_flags(frame_bgr)
+                window_regions = detect_window_regions(frame_bgr)
+                if ocr is not None:
+                    try:
+                        date_str, time_str = ocr.extract_date_time(frame_bgr)
+                    except Exception:
                         date_str, time_str = "", ""
+                else:
+                    date_str, time_str = "", ""
 
                     H, W = frame_bgr.shape[0], frame_bgr.shape[1]
                     frame_area = float(H * W)
@@ -1567,16 +1585,35 @@ class ActivityPipeline:
                         )
                         events.append(event)
 
-                    processed += 1
-                    sampled_idx += 1
-                    if self.max_frames and processed >= self.max_frames:
-                        break
-                    if callable(progress_cb):
-                        try:
-                            progress_cb({"processed": processed, "total": expected_total})
-                        except Exception:
-                            pass
-                frame_idx += 1
+                processed += 1
+                sampled_idx += 1
+                if callable(progress_cb):
+                    try:
+                        progress_cb({"processed": processed, "total": expected_total})
+                    except Exception:
+                        pass
+
+        try:
+            batch_frames: list = []
+            batch_meta: list = []  # (frame_idx, ts)
+            for frame_idx in range(first_sample, end_frame_i, step):
+                # Respect max_frames early stop
+                if self.max_frames and processed >= self.max_frames:
+                    break
+                cap.set(cv2.CAP_PROP_POS_FRAMES, int(frame_idx))
+                ok, frame_bgr = cap.read()
+                if not ok:
+                    break
+                ts = frame_idx / max(1e-6, native_fps)
+                batch_frames.append(frame_bgr)
+                batch_meta.append((frame_idx, ts))
+                if len(batch_frames) >= max(1, int(yolo_bs)):
+                    _process_batch(batch_frames, batch_meta)
+                    batch_frames.clear()
+                    batch_meta.clear()
+            # Flush remainder
+            if batch_frames:
+                _process_batch(batch_frames, batch_meta)
         finally:
             cap.release()
 

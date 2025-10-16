@@ -3,7 +3,7 @@ import os
 from typing import List
 from loguru import logger
 
-from models.activity_event import ActivityEvent
+from app.models.activity_event import ActivityEvent
 
 
 def write_events_to_json(events: List[ActivityEvent], out_path: str) -> None:
