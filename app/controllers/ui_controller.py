@@ -200,6 +200,168 @@ def worker_run_range(vpath: str, start_f: int, end_f: int, pipeline_cfg: Dict[st
         evts = []
     return [e.model_dump() if hasattr(e, "model_dump") else e for e in (evts or [])]
 
+
+def _run_job(jid: str) -> None:
+    state = JOBS.get(jid)
+    logger.info(f"[Flask] _run_job start jid={jid}, has_state={bool(state)}")
+    try:
+        video_path = state["video_path"]
+        num_processes = max(1, min(int(os.getenv("POOL_PROCS", "6")), (mp.cpu_count() or 1)))
+        # Use expected sampled frames for progress denominator
+        try:
+            total_sampled = int(get_expected_sampled_frames(video_path, 1))
+        except Exception:
+            total_sampled = _count_total_frames(video_path)
+        state["total"] = int(total_sampled)
+        _persist_state(jid, state)
+        total_frames = _count_total_frames(video_path)
+        if total_frames <= 0:
+            raise RuntimeError("Video has zero frames or cannot be read")
+
+        # Ensure a valid working directory because some libs call Path.cwd() on import
+        try:
+            cur = os.getcwd()
+            if not os.path.isdir(cur):
+                raise FileNotFoundError
+        except Exception:
+            repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+            try:
+                os.chdir(repo_root)
+                logger.info(f"[Flask] _run_job: reset cwd to {repo_root}")
+            except Exception as cwd_err:
+                logger.warning(f"[Flask] _run_job: failed to reset cwd: {cwd_err}")
+            try:
+                os.environ.setdefault("ULTRALYTICS_SETTINGS_DIR", os.path.join(repo_root, "output", ".ultralytics"))
+            except Exception:
+                pass
+        # Initialize pipeline once to reuse config across processes
+        from app.services.pipeline_service import ActivityPipeline
+        pipeline_cfg = dict(
+            trip_id=state["trip_id"],
+            crew_name="demo",
+            crew_id="1",
+            crew_role=1,
+            yolo_weights="yolov8n.pt",
+            sample_fps=1,
+            enable_ocr=False,
+            verbose=False,
+            max_frames=0,
+            use_advanced_sleep=True,
+            sleep_min_duration=10.0,
+            sleep_micro_max_min=0.25,
+            save_debug_overlays=0,
+            sleep_cfg_short_window_s=4.0,
+            sleep_cfg_mid_window_s=30.0,
+            sleep_cfg_long_window_s=120.0,
+            sleep_cfg_smoothing_alpha=0.5,
+            sleep_cfg_eye_closed_run_s=2.2,
+            sleep_cfg_perclos_drowsy_thresh=0.35,
+            sleep_cfg_perclos_sleep_thresh=0.75,
+            sleep_cfg_head_pitch_down_deg=20.0,
+            sleep_cfg_head_neutral_deg=12.0,
+            sleep_cfg_hold_transition_s=1.0,
+            sleep_cfg_recovery_hold_s=2.0,
+            sleep_cfg_open_prob_closed_thresh=0.45,
+            sleep_cfg_no_eye_head_down_deg=32.0,
+        )
+
+        chunk_seconds_env = os.getenv("CHUNK_SECONDS", "").strip()
+        if chunk_seconds_env:
+            try:
+                chunk_seconds = float(chunk_seconds_env)
+            except Exception:
+                chunk_seconds = 6.0
+        else:
+            chunk_seconds = 6.0
+
+        ranges = _split_frame_ranges_by_seconds(video_path, chunk_seconds)
+        if not ranges:
+            ranges = _split_frame_ranges(total_frames, num_processes)
+        # Estimate expected sampled frames per range for progress aggregation
+        per_range_expected = [
+            _expected_sampled_in_range(video_path, int(pipeline_cfg.get("sample_fps", 1)), s, e)
+            for (s, e) in ranges
+        ]
+        total_expected = sum(per_range_expected)
+        state["total"] = int(total_expected or state.get("total", 0))
+        _persist_state(jid, state)
+
+        t0 = time.perf_counter()
+        all_events: List[Dict[str, Any]] = []
+        completed_expected = 0
+        with cf.ProcessPoolExecutor(max_workers=num_processes, mp_context=mp.get_context("spawn")) as pool:
+            futures = []
+            for idx, (start_f, end_f) in enumerate(ranges):
+                if start_f >= end_f:
+                    continue
+                futures.append((idx, per_range_expected[idx], pool.submit(worker_run_range, video_path, start_f, end_f, pipeline_cfg)))
+
+            for idx, expected_cnt, fut in futures:
+                try:
+                    part = fut.result()
+                    if isinstance(part, list):
+                        all_events.extend(part)
+                    else:
+                        all_events.append(part)
+                except Exception:
+                    part = []
+                finally:
+                    completed_expected += int(expected_cnt)
+                    state["processed"] = int(completed_expected)
+                    _persist_state(jid, state)
+
+        # Persist output assets to repo output/<timestamp> like original flow
+        try:
+            tmp_output_dir = os.path.join(os.path.dirname(state["video_path"]), "output")
+            if os.path.isdir(tmp_output_dir):
+                from datetime import datetime
+                stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+                dest_root = os.path.join(repo_root, "output", stamp)
+                os.makedirs(dest_root, exist_ok=True)
+                for entry in os.listdir(tmp_output_dir):
+                    src_path = os.path.join(tmp_output_dir, entry)
+                    dst_path = os.path.join(dest_root, entry)
+                    if os.path.isdir(src_path):
+                        shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(src_path, dst_path)
+                state["asset_root"] = dest_root
+            else:
+                state["asset_root"] = None
+        except Exception as persist_err:
+            logger.warning(f"[Flask] Failed to persist activity assets: {persist_err}")
+            state["asset_root"] = None
+
+        # Persist detected events to asset_root for cross-worker results access
+        try:
+            if state.get("asset_root"):
+                events_path = os.path.join(state["asset_root"], "events.json")
+                with open(events_path, "w", encoding="utf-8") as f:
+                    json.dump(all_events or [], f, ensure_ascii=False, indent=2)
+        except Exception as _e:
+            logger.warning(f"[Flask] Failed to write events.json: {_e}")
+
+        elapsed = time.perf_counter() - t0
+        state["processed"] = int(completed_expected)
+        state["done"] = True
+        state["events"] = all_events
+        _persist_state(jid, state)
+        logger.info(f"[Flask] Parallel pipeline completed in {elapsed:.2f}s: {state['processed']}/{state['total']} (events={len(all_events)})")
+    except Exception as e:
+        logger.exception(f"[Flask] _run_job crashed jid={jid}: {e}")
+        if state is None:
+            state = {"processed": 0, "total": 0}
+            JOBS[jid] = state
+        state["error"] = str(e)
+        state["done"] = True
+        _persist_state(jid, state)
+    finally:
+        try:
+            shutil.rmtree(state.get("tmp_dir", ""))
+        except Exception:
+            pass
+
 @ui_bp.get("/")
 def index():
     return render_template("index.html")
@@ -246,167 +408,6 @@ def start():
     except Exception:
         JOBS[job_id]["total"] = 0
     _persist_state(job_id, JOBS[job_id])
-
-    def _run_job(jid: str) -> None:
-        state = JOBS.get(jid)
-        logger.info(f"[Flask] _run_job start jid={jid}, has_state={bool(state)}")
-        try:
-            video_path = state["video_path"]
-            num_processes = max(1, min(int(os.getenv("POOL_PROCS", "6")), (mp.cpu_count() or 1)))
-            # Use expected sampled frames for progress denominator
-            try:
-                total_sampled = int(get_expected_sampled_frames(video_path, 1))
-            except Exception:
-                total_sampled = _count_total_frames(video_path)
-            state["total"] = int(total_sampled)
-            _persist_state(jid, state)
-            total_frames = _count_total_frames(video_path)
-            if total_frames <= 0:
-                raise RuntimeError("Video has zero frames or cannot be read")
-
-            # Ensure a valid working directory because some libs call Path.cwd() on import
-            try:
-                cur = os.getcwd()
-                if not os.path.isdir(cur):
-                    raise FileNotFoundError
-            except Exception:
-                repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-                try:
-                    os.chdir(repo_root)
-                    logger.info(f"[Flask] _run_job: reset cwd to {repo_root}")
-                except Exception as cwd_err:
-                    logger.warning(f"[Flask] _run_job: failed to reset cwd: {cwd_err}")
-                try:
-                    os.environ.setdefault("ULTRALYTICS_SETTINGS_DIR", os.path.join(repo_root, "output", ".ultralytics"))
-                except Exception:
-                    pass
-            # Initialize pipeline once to reuse config across processes
-            from app.services.pipeline_service import ActivityPipeline
-            pipeline_cfg = dict(
-                trip_id=state["trip_id"],
-                crew_name="demo",
-                crew_id="1",
-                crew_role=1,
-                yolo_weights="yolov8n.pt",
-                sample_fps=1,
-                enable_ocr=False,
-                verbose=False,
-                max_frames=0,
-                use_advanced_sleep=True,
-                sleep_min_duration=10.0,
-                sleep_micro_max_min=0.25,
-                save_debug_overlays=0,
-                sleep_cfg_short_window_s=4.0,
-                sleep_cfg_mid_window_s=30.0,
-                sleep_cfg_long_window_s=120.0,
-                sleep_cfg_smoothing_alpha=0.5,
-                sleep_cfg_eye_closed_run_s=2.2,
-                sleep_cfg_perclos_drowsy_thresh=0.35,
-                sleep_cfg_perclos_sleep_thresh=0.75,
-                sleep_cfg_head_pitch_down_deg=20.0,
-                sleep_cfg_head_neutral_deg=12.0,
-                sleep_cfg_hold_transition_s=1.0,
-                sleep_cfg_recovery_hold_s=2.0,
-                sleep_cfg_open_prob_closed_thresh=0.45,
-                sleep_cfg_no_eye_head_down_deg=32.0,
-            )
-
-            chunk_seconds_env = os.getenv("CHUNK_SECONDS", "").strip()
-            if chunk_seconds_env:
-                try:
-                    chunk_seconds = float(chunk_seconds_env)
-                except Exception:
-                    chunk_seconds = 6.0
-            else:
-                chunk_seconds = 6.0
-
-            ranges = _split_frame_ranges_by_seconds(video_path, chunk_seconds)
-            if not ranges:
-                ranges = _split_frame_ranges(total_frames, num_processes)
-            # Estimate expected sampled frames per range for progress aggregation
-            per_range_expected = [
-                _expected_sampled_in_range(video_path, int(pipeline_cfg.get("sample_fps", 1)), s, e)
-                for (s, e) in ranges
-            ]
-            total_expected = sum(per_range_expected)
-            state["total"] = int(total_expected or state.get("total", 0))
-            _persist_state(jid, state)
-
-            t0 = time.perf_counter()
-            all_events: List[Dict[str, Any]] = []
-            completed_expected = 0
-            with cf.ProcessPoolExecutor(max_workers=num_processes, mp_context=mp.get_context("spawn")) as pool:
-                futures = []
-                for idx, (start_f, end_f) in enumerate(ranges):
-                    if start_f >= end_f:
-                        continue
-                    futures.append((idx, per_range_expected[idx], pool.submit(worker_run_range, video_path, start_f, end_f, pipeline_cfg)))
-
-                for idx, expected_cnt, fut in futures:
-                    try:
-                        part = fut.result()
-                        if isinstance(part, list):
-                            all_events.extend(part)
-                        else:
-                            all_events.append(part)
-                    except Exception:
-                        part = []
-                    finally:
-                        completed_expected += int(expected_cnt)
-                        state["processed"] = int(completed_expected)
-                        _persist_state(jid, state)
-
-            # Persist output assets to repo output/<timestamp> like original flow
-            try:
-                tmp_output_dir = os.path.join(os.path.dirname(state["video_path"]), "output")
-                if os.path.isdir(tmp_output_dir):
-                    from datetime import datetime
-                    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-                    dest_root = os.path.join(repo_root, "output", stamp)
-                    os.makedirs(dest_root, exist_ok=True)
-                    for entry in os.listdir(tmp_output_dir):
-                        src_path = os.path.join(tmp_output_dir, entry)
-                        dst_path = os.path.join(dest_root, entry)
-                        if os.path.isdir(src_path):
-                            shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
-                        else:
-                            shutil.copy2(src_path, dst_path)
-                    state["asset_root"] = dest_root
-                else:
-                    state["asset_root"] = None
-            except Exception as persist_err:
-                logger.warning(f"[Flask] Failed to persist activity assets: {persist_err}")
-                state["asset_root"] = None
-
-            # Persist detected events to asset_root for cross-worker results access
-            try:
-                if state.get("asset_root"):
-                    events_path = os.path.join(state["asset_root"], "events.json")
-                    with open(events_path, "w", encoding="utf-8") as f:
-                        json.dump(all_events or [], f, ensure_ascii=False, indent=2)
-            except Exception as _e:
-                logger.warning(f"[Flask] Failed to write events.json: {_e}")
-
-            elapsed = time.perf_counter() - t0
-            state["processed"] = int(completed_expected)
-            state["done"] = True
-            state["events"] = all_events
-            _persist_state(jid, state)
-            logger.info(f"[Flask] Parallel pipeline completed in {elapsed:.2f}s: {state['processed']}/{state['total']} (events={len(all_events)})")
-        except Exception as e:
-            logger.exception(f"[Flask] _run_job crashed jid={jid}: {e}")
-            if state is None:
-                state = {"processed": 0, "total": 0}
-                JOBS[jid] = state
-            state["error"] = str(e)
-            state["done"] = True
-            _persist_state(jid, state)
-        finally:
-            try:
-                shutil.rmtree(state.get("tmp_dir", ""))
-            except Exception:
-                pass
 
     t = threading.Thread(target=_run_job, args=(job_id,), daemon=False)
     t.start()
@@ -558,4 +559,175 @@ def media(job_id: str, filename: str):
     # Images and others
     return send_from_directory(abs_root, os.path.relpath(file_path, abs_root))
 
+
+# --------------------- JSON API endpoints for external UI ---------------------
+
+@ui_bp.post("/api/jobs")
+def api_create_job():
+    trip_id = request.form.get("tripId", "").strip()
+    file = request.files.get("cvvrFile")
+
+    if not trip_id:
+        return jsonify({"error": "tripId is required"}), 400
+    if file is None or not getattr(file, "filename", None):
+        return jsonify({"error": "cvvrFile is required"}), 400
+
+    tmp_dir = tempfile.mkdtemp(prefix="upload_")
+    suffix = os.path.splitext(file.filename)[1] or ".mp4"
+    video_path = os.path.join(tmp_dir, f"input{suffix}")
+    file.save(video_path)
+    logger.info(f"[API] Uploaded video saved to {video_path}")
+
+    job_id = uuid.uuid4().hex
+    JOBS[job_id] = {
+        "trip_id": trip_id,
+        "tmp_dir": tmp_dir,
+        "video_path": video_path,
+        "processed": 0,
+        "total": 0,
+        "done": False,
+        "error": None,
+        "events": None,
+        "asset_root": None,
+    }
+    try:
+        pref_total = int(get_expected_sampled_frames(video_path, 1))
+        if pref_total <= 0:
+            dur = _ffprobe_duration_seconds(video_path)
+            pref_total = int(math.ceil(dur)) if dur > 0 else 0
+        JOBS[job_id]["total"] = max(0, pref_total)
+    except Exception:
+        JOBS[job_id]["total"] = 0
+    _persist_state(job_id, JOBS[job_id])
+
+    t = threading.Thread(target=_run_job, args=(job_id,), daemon=False)
+    t.start()
+    logger.info(f"[API] Started background job thread for {job_id}, ident={t.ident}")
+
+    base = request.host_url.rstrip("/")
+    return jsonify({
+        "job_id": job_id,
+        "status_url": f"{base}/api/jobs/{job_id}",
+        "progress_url": f"{base}/api/jobs/{job_id}/progress",
+        "results_url": f"{base}/api/jobs/{job_id}/results",
+        "media_url_prefix": f"{base}/api/jobs/{job_id}/media",
+    }), 201
+
+
+@ui_bp.get("/api/jobs/<job_id>")
+def api_get_job(job_id: str):
+    state = JOBS.get(job_id) or _load_state(job_id) or {
+        "processed": 0, "total": 0, "done": False, "error": None, "trip_id": None
+    }
+    processed = int(state.get("processed", 0))
+    total = max(0, int(state.get("total", 0)))
+    done = bool(state.get("done", False))
+    error = state.get("error")
+    percent = (processed / total * 100.0) if total > 0 else 0.0
+    return jsonify({
+        "job_id": job_id,
+        "processed": processed,
+        "total": total,
+        "percent": round(percent, 2),
+        "done": done,
+        "error": error,
+    })
+
+
+@ui_bp.get("/api/jobs/<job_id>/progress")
+def api_progress(job_id: str):
+    persisted = _load_state(job_id)
+    if not persisted:
+        time.sleep(0.05)
+        persisted = _load_state(job_id)
+        if not persisted:
+            return jsonify({
+                "processed": 0,
+                "total": 0,
+                "done": False,
+                "error": None,
+                "notFound": True,
+            }), 200
+
+    return jsonify({
+        "processed": int(persisted.get("processed", 0)),
+        "total": int(persisted.get("total", 0)),
+        "done": bool(persisted.get("done", False)),
+        "error": persisted.get("error"),
+    })
+
+
+@ui_bp.get("/api/jobs/<job_id>/results")
+def api_results(job_id: str):
+    state = JOBS.get(job_id) or _load_state(job_id)
+    if not state:
+        return jsonify({"error": "invalid_job"}), 404
+    if state.get("error"):
+        return jsonify({"error": state["error"]}), 500
+
+    events = state.get("events") or []
+    trip_id = state.get("trip_id") or ""
+
+    if (not events) and state.get("asset_root"):
+        try:
+            events_path = os.path.join(state["asset_root"], "events.json")
+            with open(events_path, "r", encoding="utf-8") as f:
+                events = json.load(f) or []
+        except Exception:
+            events = []
+
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except Exception:
+        page = 1
+    try:
+        page_size = int(request.args.get("page_size", 25))
+    except Exception:
+        page_size = 25
+    page_size = max(1, min(100, page_size))
+
+    total = len(events)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    if page > total_pages:
+        page = total_pages
+    start = (page - 1) * page_size
+    end = min(start + page_size, total)
+    paged_events = events[start:end]
+
+    base = request.host_url.rstrip("/")
+    media_prefix = f"{base}/api/jobs/{job_id}/media"
+    events_with_urls = []
+    for e in paged_events:
+        try:
+            e_copy = dict(e)
+        except Exception:
+            # Fallback: if event is a pydantic model, try model_dump
+            try:
+                e_copy = e.model_dump()
+            except Exception:
+                e_copy = e
+        img = e_copy.get("activityImage")
+        clip = e_copy.get("activityClip")
+        if img:
+            e_copy["activityImageUrl"] = f"{media_prefix}/{img}"
+        if clip:
+            e_copy["activityClipUrl"] = f"{media_prefix}/{clip}"
+        events_with_urls.append(e_copy)
+
+    return jsonify({
+        "job_id": job_id,
+        "trip_id": trip_id,
+        "events": events_with_urls,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "start": start,
+        "end": end,
+        "total_pages": total_pages,
+    })
+
+
+@ui_bp.get("/api/jobs/<job_id>/media/<path:filename>")
+def api_media(job_id: str, filename: str):
+    return media(job_id, filename)
 
