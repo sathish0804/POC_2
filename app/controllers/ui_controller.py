@@ -153,13 +153,13 @@ def _split_frame_ranges_by_seconds(video_path: str, chunk_seconds: float) -> Lis
         start = end
     return ranges
 
-def _expected_sampled_in_range(video_path: str, sample_fps: int, start_frame: int, end_frame: int) -> int:
+def _expected_sampled_in_range(video_path: str, sample_fps: float, start_frame: int, end_frame: int) -> int:
     """Compute expected sampled frames in [start_frame, end_frame) using same logic as video_utils."""
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         return 0
     native_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    step = max(1, int(round(native_fps / max(1, sample_fps))))
+    step = max(1, int(round(native_fps / max(1e-6, float(sample_fps)))))
     cap.release()
     lo = max(0, int(start_frame))
     hi = max(0, int(end_frame))
@@ -209,7 +209,7 @@ def _run_job(jid: str) -> None:
         num_processes = max(1, min(int(os.getenv("POOL_PROCS", "6")), (mp.cpu_count() or 1)))
         # Use expected sampled frames for progress denominator
         try:
-            total_sampled = int(get_expected_sampled_frames(video_path, 1))
+            total_sampled = int(get_expected_sampled_frames(video_path, float(os.getenv("SAMPLE_FPS", "0.5"))))
         except Exception:
             total_sampled = _count_total_frames(video_path)
         state["total"] = int(total_sampled)
@@ -242,7 +242,7 @@ def _run_job(jid: str) -> None:
             crew_id="1",
             crew_role=1,
             yolo_weights="yolo11s.pt",
-            sample_fps=1,
+            sample_fps=float(os.getenv("SAMPLE_FPS", "0.5")),
             enable_ocr=False,
             verbose=False,
             max_frames=0,
@@ -281,7 +281,7 @@ def _run_job(jid: str) -> None:
             ranges = _split_frame_ranges(total_frames, num_processes)
         # Estimate expected sampled frames per range for progress aggregation
         per_range_expected = [
-            _expected_sampled_in_range(video_path, int(pipeline_cfg.get("sample_fps", 1)), s, e)
+            _expected_sampled_in_range(video_path, float(pipeline_cfg.get("sample_fps", 1.0)), s, e)
             for (s, e) in ranges
         ]
         total_expected = sum(per_range_expected)
@@ -403,7 +403,7 @@ def start():
     }
     try:
         # Prefill total for immediate UI feedback
-        pref_total = int(get_expected_sampled_frames(video_path, 1))
+        pref_total = int(get_expected_sampled_frames(video_path, float(os.getenv("SAMPLE_FPS", "0.5"))))
         logger.info(f"[Flask] start: pref_total={pref_total}")
         if pref_total <= 0:
             dur = _ffprobe_duration_seconds(video_path)

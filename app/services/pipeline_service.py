@@ -35,7 +35,7 @@ class ActivityPipeline:
     crew_id: str
     crew_role: int
     yolo_weights: str
-    sample_fps: int = 1
+    sample_fps: float = 1.0
     enable_ocr: bool = True
     verbose: bool = False
     max_frames: int = 0
@@ -947,7 +947,7 @@ class ActivityPipeline:
         if not cap_meta.isOpened():
             return []
         native_fps = cap_meta.get(cv2.CAP_PROP_FPS) or 30.0
-        step = max(1, int(round(native_fps / max(1, self.sample_fps))))
+        step = max(1, int(round(native_fps / max(1e-6, float(self.sample_fps)))))
         cap_meta.release()
 
         cap = cv2.VideoCapture(video_path)

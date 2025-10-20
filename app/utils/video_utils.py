@@ -4,7 +4,7 @@ import os
 from loguru import logger
 
 
-def sample_video_frames(video_path: str, sample_fps: int) -> Generator[Tuple[int, float, any], None, None]:
+def sample_video_frames(video_path: str, sample_fps: float) -> Generator[Tuple[int, float, any], None, None]:
     """Yield frames at fixed intervals (default 1 FPS).
 
     Returns tuples: (sample_index, timestamp_sec, frame_bgr)
@@ -13,20 +13,19 @@ def sample_video_frames(video_path: str, sample_fps: int) -> Generator[Tuple[int
     if not cap.isOpened():
         raise RuntimeError(f"Failed to open video: {video_path}")
     native_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    step = max(1, int(round(native_fps / max(1, sample_fps))))
+    step = max(1, int(round(native_fps / max(1e-6, float(sample_fps)))))
     logger.debug(f"[video_utils] open {video_path}, fps={native_fps:.2f}, step={step}")
 
-    frame_idx = 0
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
     sampled_idx = 0
-    while True:
+    for frame_idx in range(0, total_frames, step):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(frame_idx))
         ret, frame = cap.read()
         if not ret:
             break
-        if frame_idx % step == 0:
-            timestamp = frame_idx / native_fps
-            yield sampled_idx, timestamp, frame
-            sampled_idx += 1
-        frame_idx += 1
+        timestamp = frame_idx / native_fps
+        yield sampled_idx, timestamp, frame
+        sampled_idx += 1
     cap.release()
     logger.debug(f"[video_utils] completed sampling for {video_path}")
 
@@ -53,7 +52,7 @@ def get_video_duration_str(video_path: str) -> str:
     return f"{h:02d}:{m:02d}:{s:02d}"
 
 
-def get_expected_sampled_frames(video_path: str, sample_fps: int) -> int:
+def get_expected_sampled_frames(video_path: str, sample_fps: float) -> int:
     """Estimate number of samples yielded by `sample_video_frames` for the full video."""
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -63,19 +62,19 @@ def get_expected_sampled_frames(video_path: str, sample_fps: int) -> int:
     cap.release()
     if native_fps <= 0 or total_frames <= 0:
         return 0
-    step = max(1, int(round(native_fps / max(1, sample_fps))))
+    step = max(1, int(round(native_fps / max(1e-6, float(sample_fps)))))
     # Number of frames we would read that satisfy frame_idx % step == 0 in [0, total_frames)
     # This is ceil(total_frames / step) but since index starts at 0, it's ((total_frames - 1) // step) + 1
     return ((total_frames - 1) // step) + 1 if total_frames > 0 else 0
 
 
-def get_expected_sampled_frames_in_range(video_path: str, sample_fps: int, start_frame: int, end_frame: int) -> int:
+def get_expected_sampled_frames_in_range(video_path: str, sample_fps: float, start_frame: int, end_frame: int) -> int:
     """Estimate number of sampled frames within [start_frame, end_frame) using same sampling logic."""
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         return 0
     native_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    step = max(1, int(round(native_fps / max(1, sample_fps))))
+    step = max(1, int(round(native_fps / max(1e-6, float(sample_fps)))))
     cap.release()
     lo = max(0, int(start_frame))
     hi = max(0, int(end_frame))
