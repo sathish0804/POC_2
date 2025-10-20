@@ -241,7 +241,7 @@ def _run_job(jid: str) -> None:
             crew_name="demo",
             crew_id="1",
             crew_role=1,
-            yolo_weights="yolov8n.pt",
+            yolo_weights="yolo11s.pt",
             sample_fps=1,
             enable_ocr=False,
             verbose=False,
@@ -264,6 +264,8 @@ def _run_job(jid: str) -> None:
             sleep_cfg_open_prob_closed_thresh=0.45,
             sleep_cfg_no_eye_head_down_deg=32.0,
         )
+
+        logger.info(f"[Flask] Job {jid} config: yolo_weights={pipeline_cfg['yolo_weights']}, sample_fps={pipeline_cfg['sample_fps']}, native_frames={total_frames}")
 
         chunk_seconds_env = os.getenv("CHUNK_SECONDS", "").strip()
         if chunk_seconds_env:
@@ -347,7 +349,7 @@ def _run_job(jid: str) -> None:
         state["done"] = True
         state["events"] = all_events
         _persist_state(jid, state)
-        logger.info(f"[Flask] Parallel pipeline completed in {elapsed:.2f}s: {state['processed']}/{state['total']} (events={len(all_events)})")
+        logger.info(f"[Flask] Parallel pipeline completed in {elapsed:.2f}s (yolo_weights={pipeline_cfg['yolo_weights']}, sample_fps={pipeline_cfg['sample_fps']}, sampled_frames={state['processed']}/{state['total']}, native_frames={total_frames}, events={len(all_events)})")
     except Exception as e:
         logger.exception(f"[Flask] _run_job crashed jid={jid}: {e}")
         if state is None:
