@@ -6,6 +6,8 @@ from app.utils.geometry import iou as iou_xyxy
 
 
 class SimpleTracker:
+    """Greedy IoU-based person tracker with short-term memory and TTL pruning."""
+
     def __init__(self, iou_match_thresh: float = 0.30, ttl_s: float = 30.0):
         self.iou_match_thresh = float(iou_match_thresh)
         self.ttl_s = float(ttl_s)
@@ -28,6 +30,7 @@ class SimpleTracker:
         return None
 
     def assign(self, person_boxes: List[np.ndarray], ts: float) -> List[int]:
+        """Assign track IDs to current frame boxes based on IoU with prior boxes."""
         assigned: List[int] = []
         used: set = set()
         for box in person_boxes:
@@ -45,6 +48,7 @@ class SimpleTracker:
         return assigned
 
     def cleanup(self, ts: float) -> None:
+        """Remove stale tracks that exceeded time-to-live."""
         to_del = []
         for tid, t in self._tracks.items():
             if (ts - float(t.get("last_ts", ts))) > self.ttl_s:
@@ -54,6 +58,7 @@ class SimpleTracker:
 
 
 class SleepTracker:
+    """Emit micro_sleep/sleep episodes from eye openness and head-down angle signals."""
     def __init__(
         self,
         eye_thresh: float = 0.18,
@@ -86,6 +91,7 @@ class SleepTracker:
         head_down_angle_deg: Optional[float],
         engaged: bool,
     ) -> List[Dict[str, Any]]:
+        """Update per-track state and return any completed sleep-related events for this frame."""
         events: List[Dict[str, Any]] = []
         st = self._state.get(track_id, {"active": False, "start_ts": None})
         is_sleeping_now = self._should_sleep(eye_openness, head_down_angle_deg, engaged)
@@ -120,6 +126,7 @@ class SleepTracker:
         return events
 
     def finalize(self, ts: Optional[float] = None) -> List[Dict[str, Any]]:
+        """Flush any active episodes at end-of-stream and return emitted events."""
         events: List[Dict[str, Any]] = []
         for track_id, st in list(self._state.items()):
             if st.get("active", False):
@@ -146,7 +153,7 @@ logger.debug(f"[{__name__}] module loaded")
 
 
 class ActivityHeuristicTracker:
-    """Lightweight, per-person heuristic tracker for activities 4 and 5.
+    """Lightweight heuristics for activities 4 (writing) and 5 (packing).
 
     - Writing while moving (4): repetitive small-range hand motion.
     - Packing (5): sustained hand overlap with bag/backpack.
@@ -213,6 +220,7 @@ class ActivityHeuristicTracker:
         bag_boxes_frame: List[List[float]],
         pose_points: Dict[str, Any] = None,
     ) -> List[Dict[str, Any]]:
+        """Update heuristic state and emit writing/packing events when thresholds are met."""
         events: List[Dict[str, Any]] = []
         st = self._ensure_track(track_id)
         st["last_ts"] = float(ts)

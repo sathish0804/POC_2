@@ -1,4 +1,4 @@
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 import numpy as np
 from ultralytics import YOLO
 from loguru import logger
@@ -69,12 +69,6 @@ class YoloService:
                     dets.append((cls_id, score, (x1, y1, x2, y2)))
             batched.append(dets)
         return batched
-
-    def class_name(self, class_id: int) -> Optional[str]:
-        try:
-            return self.model.names.get(class_id)
-        except Exception:
-            return None
 
 
 # Module import log

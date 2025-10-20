@@ -8,6 +8,11 @@ from .filters import Ewma
 
 @dataclass
 class SleepDecisionConfigV2:
+    """Configuration for the V2 sleep decision state machine.
+
+    Thresholds and windows are tuned for ~1 FPS sampling; see adapter below for
+    backward-compatible mapping from legacy config knobs.
+    """
     # Windows (seconds)
     short_window_s: float = 5.0      # motion/blink
     mid_window_s: float = 45.0       # PERCLOS (time-weighted)
@@ -54,6 +59,8 @@ class SleepDecisionConfigV2:
 
 class SleepDecisionMachineV2:
     """
+    State machine for micro_sleep/drowsy/sleep decisions.
+
     Emits e.g.:
     {"activity": "micro_sleep"|"drowsy"|"sleep",
      "confidence": 0..1,

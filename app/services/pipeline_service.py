@@ -25,6 +25,11 @@ from app.utils.clip_utils import extract_clip
 
 @dataclass
 class ActivityPipeline:
+    """Main activity detection pipeline.
+
+    Orchestrates YOLO detections, MediaPipe landmarks, OCR (optional), sleep logic,
+    and heuristic trackers to emit structured `ActivityEvent` records.
+    """
     trip_id: str
     crew_name: str
     crew_id: str
@@ -117,6 +122,10 @@ class ActivityPipeline:
         return 0, (normalized.title() if normalized else "Unknown activity")
 
     def process_video(self, video_path: str, progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None) -> List[ActivityEvent]:
+        """Process an entire video at `sample_fps` and return activity events.
+
+        Progress is optionally reported via `progress_cb({"processed": n, "total": m, "done": bool})`.
+        """
         if self.verbose:
             logger.debug("[Pipeline] Initializing services (YOLO, MediaPipe, OCR)...")
         # Allow adjusting YOLO confidence via env var for quick sweeps (optional)
@@ -638,6 +647,9 @@ class ActivityPipeline:
                             "holding": False,
                             "evidence": {"rule": sev.get("evidence_rule")},
                             "track_id": track_id,
+                            # Carry true episode timing when available from SleepTracker
+                            "event_start_ts": sev.get("start_ts"),
+                            "event_end_ts": sev.get("end_ts"),
                         })
 
                 if self.save_debug_overlays:
@@ -812,6 +824,12 @@ class ActivityPipeline:
                 except Exception:
                     clip_filename = None
 
+                # Resolve start/end times: prefer tracker-provided values if present
+                _ev_start = act.get("event_start_ts")
+                _ev_end = act.get("event_end_ts")
+                _start_ts = float(_ev_start) if _ev_start is not None else float(ts)
+                _end_ts = float(_ev_end) if _ev_end is not None else (float(_start_ts) + 4.0)
+
                 event = ActivityEvent(
                     tripId=self.trip_id,
                     activityType=activity_type,
@@ -819,7 +837,8 @@ class ActivityPipeline:
                     objectType=obj,
                     fileUrl=video_path,
                     fileDuration=file_duration,
-                    activityStartTime=f"{ts:.2f}",
+                    activityStartTime=f"{_start_ts:.2f}",
+                    activityEndTime=f"{_end_ts:.2f}",
                     crewName=self.crew_name,
                     crewId=self.crew_id,
                     crewRole=self.crew_role,
@@ -859,8 +878,8 @@ class ActivityPipeline:
     ) -> List[ActivityEvent]:
         """Process only frames in [start_frame, end_frame) while honoring sampling.
 
-        Frames are sampled at self.sample_fps using the same logic as sample_video_frames,
-        but constrained to the absolute frame index range [start_frame, end_frame).
+        Frames are sampled at `self.sample_fps` using the same logic as `sample_video_frames`,
+        constrained to the absolute frame index range [start_frame, end_frame).
         """
         if self.verbose:
             logger.debug("[Pipeline:Range] Initializing services (YOLO, MediaPipe, OCR)...")
@@ -1394,6 +1413,8 @@ class ActivityPipeline:
                                     "holding": False,
                                     "evidence": {"rule": sev.get("evidence_rule")},
                                     "track_id": track_id,
+                                    "event_start_ts": sev.get("start_ts"),
+                                    "event_end_ts": sev.get("end_ts"),
                                 })
 
                         if self.save_debug_overlays:
@@ -1564,6 +1585,11 @@ class ActivityPipeline:
                         except Exception:
                             clip_filename = None
 
+                        _ev_start = act.get("event_start_ts")
+                        _ev_end = act.get("event_end_ts")
+                        _start_ts = float(_ev_start) if _ev_start is not None else float(ts)
+                        _end_ts = float(_ev_end) if _ev_end is not None else (float(_start_ts) + 4.0)
+
                         event = ActivityEvent(
                             tripId=self.trip_id,
                             activityType=activity_type,
@@ -1571,7 +1597,8 @@ class ActivityPipeline:
                             objectType=obj,
                             fileUrl=video_path,
                             fileDuration=file_duration,
-                            activityStartTime=f"{ts:.2f}",
+                            activityStartTime=f"{_start_ts:.2f}",
+                            activityEndTime=f"{_end_ts:.2f}",
                             crewName=self.crew_name,
                             crewId=self.crew_id,
                             crewRole=self.crew_role,

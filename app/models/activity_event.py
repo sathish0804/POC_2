@@ -13,6 +13,8 @@ class ActivityEvent(BaseModel):
     fileUrl: str = Field(default="")
     fileDuration: str = Field(default="")
     activityStartTime: str = Field(default="")
+    # Optional: end time of the detected activity window in seconds (string to match StartTime)
+    activityEndTime: Optional[str] = Field(default=None)
     crewName: str = Field(default="")
     crewId: str = Field(default="")
     crewRole: int = Field(default=1)

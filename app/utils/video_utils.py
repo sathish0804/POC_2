@@ -5,9 +5,9 @@ from loguru import logger
 
 
 def sample_video_frames(video_path: str, sample_fps: int) -> Generator[Tuple[int, float, any], None, None]:
-    """Yield frames at fixed intervals (1 frame per second default).
+    """Yield frames at fixed intervals (default 1 FPS).
 
-    Returns tuples: (frame_index, timestamp_sec, frame_bgr)
+    Returns tuples: (sample_index, timestamp_sec, frame_bgr)
     """
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -32,10 +32,12 @@ def sample_video_frames(video_path: str, sample_fps: int) -> Generator[Tuple[int
 
 
 def get_video_filename(video_path: str) -> str:
+    """Return basename of the provided video path."""
     return os.path.basename(video_path)
 
 
 def get_video_duration_str(video_path: str) -> str:
+    """Return HH:MM:SS duration string computed from FPS and total frames; empty on failure."""
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         return ""
@@ -52,10 +54,7 @@ def get_video_duration_str(video_path: str) -> str:
 
 
 def get_expected_sampled_frames(video_path: str, sample_fps: int) -> int:
-    """Estimate number of frames that will be yielded by sample_video_frames.
-
-    Uses native fps and total frames to compute the sampling step and total samples.
-    """
+    """Estimate number of samples yielded by `sample_video_frames` for the full video."""
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         return 0
@@ -71,10 +70,7 @@ def get_expected_sampled_frames(video_path: str, sample_fps: int) -> int:
 
 
 def get_expected_sampled_frames_in_range(video_path: str, sample_fps: int, start_frame: int, end_frame: int) -> int:
-    """Estimate number of sampled frames within [start_frame, end_frame).
-
-    Mirrors the logic used by sample_video_frames for consistent step size.
-    """
+    """Estimate number of sampled frames within [start_frame, end_frame) using same sampling logic."""
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         return 0

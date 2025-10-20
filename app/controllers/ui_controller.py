@@ -366,11 +366,13 @@ def _run_job(jid: str) -> None:
 
 @ui_bp.get("/")
 def index():
+    """Render the landing page to upload a CVVR file and Trip ID."""
     return render_template("index.html")
 
 
 @ui_bp.post("/start")
 def start():
+    """Create a processing job for the uploaded video and start a background worker."""
     trip_id = request.form.get("tripId", "").strip()
     file = request.files.get("cvvrFile")
 
@@ -419,12 +421,14 @@ def start():
 
 @ui_bp.get("/job/<job_id>")
 def job(job_id: str):
+    """Render job page which polls progress for the given job id."""
     # Allow page to load even if in-memory state is missing; progress polling relies on persisted state
     return render_template("job.html", job_id=job_id)
 
 
 @ui_bp.get("/progress/<job_id>")
 def progress(job_id: str):
+    """Return JSON progress for a job from the persisted lightweight state."""
     persisted = _load_state(job_id)
     if not persisted:
         time.sleep(0.05)
@@ -448,6 +452,7 @@ def progress(job_id: str):
 
 @ui_bp.get("/results/<job_id>")
 def results(job_id: str):
+    """Render paginated results for detected events of the given job."""
     # Try in-memory first; fall back to persisted state so this works across workers
     state = JOBS.get(job_id)
     if not state:
@@ -505,6 +510,7 @@ def results(job_id: str):
 
 @ui_bp.get("/media/<job_id>/<path:filename>")
 def media(job_id: str, filename: str):
+    """Serve media files from the job's asset root; supports HTTP range for MP4 streaming."""
     # Support cross-worker access by falling back to persisted state
     state = JOBS.get(job_id) or _load_state(job_id)
     if not state:
@@ -566,6 +572,7 @@ def media(job_id: str, filename: str):
 
 @ui_bp.post("/api/jobs")
 def api_create_job():
+    """Create a job via API and start background processing; returns endpoints for polling and results."""
     trip_id = request.form.get("tripId", "").strip()
     file = request.files.get("cvvrFile")
 
@@ -618,6 +625,7 @@ def api_create_job():
 
 @ui_bp.get("/api/jobs/<job_id>")
 def api_get_job(job_id: str):
+    """Return job status summary as JSON (processed/total/percent/done/error)."""
     state = JOBS.get(job_id) or _load_state(job_id) or {
         "processed": 0, "total": 0, "done": False, "error": None, "trip_id": None
     }
@@ -638,6 +646,7 @@ def api_get_job(job_id: str):
 
 @ui_bp.get("/api/jobs/<job_id>/progress")
 def api_progress(job_id: str):
+    """Return job progress JSON for API clients."""
     persisted = _load_state(job_id)
     if not persisted:
         time.sleep(0.05)
@@ -661,6 +670,7 @@ def api_progress(job_id: str):
 
 @ui_bp.get("/api/jobs/<job_id>/results")
 def api_results(job_id: str):
+    """Return paginated events as JSON with media URLs for the given job id."""
     state = JOBS.get(job_id) or _load_state(job_id)
     if not state:
         return jsonify({"error": "invalid_job"}), 404
@@ -731,5 +741,6 @@ def api_results(job_id: str):
 
 @ui_bp.get("/api/jobs/<job_id>/media/<path:filename>")
 def api_media(job_id: str, filename: str):
+    """Serve media file for the given job id via API."""
     return media(job_id, filename)
 
