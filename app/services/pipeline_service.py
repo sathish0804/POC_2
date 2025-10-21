@@ -228,6 +228,15 @@ class ActivityPipeline:
             img, _ = self._background_gate(img)
         return img
 
+    def _preprocess_for_yolo(self, frame_bgr: np.ndarray) -> np.ndarray:
+        """Preprocess specifically for YOLO: ROI + photometric only (no background gating)."""
+        if not bool(self.enable_preproc):
+            return frame_bgr
+        img = frame_bgr
+        img = self._apply_roi_masks(img)
+        img = self._photometric_norm(img)
+        return img
+
     def process_video(self, video_path: str, progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None) -> List[ActivityEvent]:
         """Process an entire video at `sample_fps` and return activity events.
 
@@ -320,7 +329,7 @@ class ActivityPipeline:
 
             # RAW vs preprocessed split: YOLO on preproc, MediaPipe on RAW
             frame_bgr_raw = frame_bgr
-            frame_bgr_yolo = self._preprocess_frame(frame_bgr_raw)
+            frame_bgr_yolo = self._preprocess_for_yolo(frame_bgr_raw)
             detections = yolo.detect(frame_bgr_yolo)
             frame_rgb_raw = cv2.cvtColor(frame_bgr_raw, cv2.COLOR_BGR2RGB)
             mp_out = mp_service.process(frame_rgb_raw)
@@ -403,12 +412,12 @@ class ActivityPipeline:
 
                 validated: List[Tuple[int, float, Tuple[float, float, float, float]]] = []
                 for det in persons:
-                    _, _, b = det
+                    _, conf_det, b = det
                     c_face = _count_inside(b, pts_face)
                     c_hands = _count_inside(b, pts_hands)
                     c_pose = _count_inside(b, pts_pose)
                     # Require face/pose; allow hands-only only if strong and supported by face/pose
-                    if (c_pose >= 10) or (c_face >= 20) or ((c_hands >= 12) and (c_face >= 10 or c_pose >= 6)):
+                    if (c_pose >= 10) or (c_face >= 20) or ((c_hands >= 12) and (c_face >= 10 or c_pose >= 6)) or (float(conf_det) >= 0.80):
                         validated.append(det)
                 if validated:
                     persons = validated
@@ -1128,7 +1137,7 @@ class ActivityPipeline:
 
             for (frame_idx, ts), frame_bgr, detections in zip(batch_meta, batch_frames, detections_batched):
                 frame_bgr_raw = frame_bgr
-                frame_bgr_yolo = self._preprocess_frame(frame_bgr_raw)
+                frame_bgr_yolo = self._preprocess_for_yolo(frame_bgr_raw)
                 # detections is provided by batching; keep it as-is for YOLO outputs
                 frame_rgb_raw = cv2.cvtColor(frame_bgr_raw, cv2.COLOR_BGR2RGB)
                 mp_out = mp_service.process(frame_rgb_raw)
@@ -1211,11 +1220,11 @@ class ActivityPipeline:
 
                         validated: List[Tuple[int, float, Tuple[float, float, float, float]]] = []
                         for det in persons:
-                            _, _, b = det
+                            _, conf_det, b = det
                             c_face = _count_inside(b, pts_face)
                             c_hands = _count_inside(b, pts_hands)
                             c_pose = _count_inside(b, pts_pose)
-                            if (c_pose >= 10) or (c_face >= 20) or ((c_hands >= 12) and (c_face >= 10 or c_pose >= 6)):
+                            if (c_pose >= 10) or (c_face >= 20) or ((c_hands >= 12) and (c_face >= 10 or c_pose >= 6)) or (float(conf_det) >= 0.80):
                                 validated.append(det)
                         if validated:
                             persons = validated
