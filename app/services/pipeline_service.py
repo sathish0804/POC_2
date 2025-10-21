@@ -228,7 +228,12 @@ class ActivityPipeline:
 
             H, W = frame_bgr.shape[0], frame_bgr.shape[1]
             frame_area = float(H * W)
-            min_area = max(1.0, self.person_min_area_frac * frame_area)
+            try:
+                _min_area_frac_env = float(0.02)
+            except Exception:
+                _min_area_frac_env = 0.02
+            min_area_frac = max(self.person_min_area_frac, _min_area_frac_env)
+            min_area = max(1.0, min_area_frac * frame_area)
             person_candidates = [
                 (cid, score, box)
                 for (cid, score, box) in detections
@@ -294,7 +299,8 @@ class ActivityPipeline:
                     c_face = _count_inside(b, pts_face)
                     c_hands = _count_inside(b, pts_hands)
                     c_pose = _count_inside(b, pts_pose)
-                    if (c_hands >= 8) or (c_pose >= 10) or (c_face >= 20):
+                    # Require face/pose; allow hands-only only if strong and supported by face/pose
+                    if (c_pose >= 10) or (c_face >= 20) or ((c_hands >= 12) and (c_face >= 10 or c_pose >= 6)):
                         validated.append(det)
                 if validated:
                     persons = validated
@@ -1022,7 +1028,12 @@ class ActivityPipeline:
 
                     H, W = frame_bgr.shape[0], frame_bgr.shape[1]
                     frame_area = float(H * W)
-                    min_area = max(1.0, self.person_min_area_frac * frame_area)
+                    try:
+                        _min_area_frac_env = float(0.02)
+                    except Exception:
+                        _min_area_frac_env = 0.02
+                    min_area_frac = max(self.person_min_area_frac, _min_area_frac_env)
+                    min_area = max(1.0, min_area_frac * frame_area)
                     person_candidates = [
                         (cid, score, box)
                         for (cid, score, box) in detections
@@ -1088,7 +1099,7 @@ class ActivityPipeline:
                             c_face = _count_inside(b, pts_face)
                             c_hands = _count_inside(b, pts_hands)
                             c_pose = _count_inside(b, pts_pose)
-                            if (c_hands >= 8) or (c_pose >= 10) or (c_face >= 20):
+                            if (c_pose >= 10) or (c_face >= 20) or ((c_hands >= 12) and (c_face >= 10 or c_pose >= 6)):
                                 validated.append(det)
                         if validated:
                             persons = validated
