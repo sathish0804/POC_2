@@ -14,7 +14,6 @@ from app.services.model_cache import (
 from app.utils.video_utils import sample_video_frames, get_video_duration_str, get_video_filename, get_expected_sampled_frames, get_expected_sampled_frames_in_range
 from app.utils.geometry import iou
 from app.utils.phone_logic import infer_phone_usage_from_landmarks
-from app.services.antenna_refiner import AntennaRefiner
 from app.utils.annotate import annotate_and_save
 from app.utils.trackers import SimpleTracker, SleepTracker, ActivityHeuristicTracker
 from app.utils.eye_metrics import compute_ear, eye_open_probability
@@ -192,6 +191,19 @@ class ActivityPipeline:
                 progress_cb({"processed": processed, "total": expected_total})
             except Exception:
                 pass
+
+            # Delegate to range-based implementation to enable YOLO batching while preserving progress callbacks
+            try:
+                cap__ = cv2.VideoCapture(video_path)
+                if cap__.isOpened():
+                    total_native_frames__ = int(cap__.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+                else:
+                    total_native_frames__ = 0
+                cap__.release()
+            except Exception:
+                total_native_frames__ = 0
+            end_frame__ = int(total_native_frames__) if total_native_frames__ and total_native_frames__ > 0 else int(1e12)
+            return self.process_video_range(video_path, 0, end_frame__, progress_cb)
 
         for index, ts, frame_bgr in sample_video_frames(video_path, self.sample_fps):
             if self.max_frames and processed >= self.max_frames:
@@ -765,8 +777,19 @@ class ActivityPipeline:
                         })
 
             try:
-                if len(persons) > 2:
-                    person_boxes = [b for (_, _, b) in persons]
+                group_min_conf = float(0.55)
+                merge_iou = float(0.50)
+                highconf = [det for det in persons if float(det[1]) >= max(self.person_min_conf, group_min_conf)]
+                def _distinct_by_iou(dets, thr):
+                    kept = []
+                    for d in sorted(dets, key=lambda x: float(x[1]), reverse=True):
+                        _, _, box = d
+                        if all(iou(box, k[2]) < thr for k in kept):
+                            kept.append(d)
+                    return kept
+                distinct = _distinct_by_iou(highconf, merge_iou)
+                if len(distinct) > 2:
+                    person_boxes = [b for (_, _, b) in distinct]
                     gx1 = int(min(b[0] for b in person_boxes))
                     gy1 = int(min(b[1] for b in person_boxes))
                     gx2 = int(max(b[2] for b in person_boxes))
@@ -777,7 +800,7 @@ class ActivityPipeline:
                         "object": "more_than_two_people",
                         "object_bbox": None,
                         "holding": False,
-                        "evidence": {"rule": "people_count", "count": len(persons)},
+                        "evidence": {"rule": "people_count", "count": len(distinct)},
                         "track_id": None,
                     })
             except Exception:
@@ -1526,8 +1549,19 @@ class ActivityPipeline:
                                 })
 
                     try:
-                        if len(persons) > 2:
-                            person_boxes = [b for (_, _, b) in persons]
+                        group_min_conf = float(0.55)
+                        merge_iou = float(0.50)
+                        highconf = [det for det in persons if float(det[1]) >= max(self.person_min_conf, group_min_conf)]
+                        def _distinct_by_iou(dets, thr):
+                            kept = []
+                            for d in sorted(dets, key=lambda x: float(x[1]), reverse=True):
+                                _, _, box = d
+                                if all(iou(box, k[2]) < thr for k in kept):
+                                    kept.append(d)
+                            return kept
+                        distinct = _distinct_by_iou(highconf, merge_iou)
+                        if len(distinct) > 2:
+                            person_boxes = [b for (_, _, b) in distinct]
                             gx1 = int(min(b[0] for b in person_boxes))
                             gy1 = int(min(b[1] for b in person_boxes))
                             gx2 = int(max(b[2] for b in person_boxes))
@@ -1538,7 +1572,7 @@ class ActivityPipeline:
                                 "object": "more_than_two_people",
                                 "object_bbox": None,
                                 "holding": False,
-                                "evidence": {"rule": "people_count", "count": len(persons)},
+                                "evidence": {"rule": "people_count", "count": len(distinct)},
                                 "track_id": None,
                             })
                     except Exception:
