@@ -5,9 +5,12 @@ import cv2
 import numpy as np
 
 from app.models.activity_event import ActivityEvent
-from app.services.yolo_service import YoloService
-from app.services.mediapipe_service import MediaPipeService
-from app.utils.ocr_utils import OcrUtils
+from app.services.model_cache import (
+    get_yolo_service,
+    get_mediapipe_service,
+    get_antenna_refiner,
+    get_ocr_utils,
+)
 from app.utils.video_utils import sample_video_frames, get_video_duration_str, get_video_filename, get_expected_sampled_frames, get_expected_sampled_frames_in_range
 from app.utils.geometry import iou
 from app.utils.phone_logic import infer_phone_usage_from_landmarks
@@ -135,10 +138,10 @@ class ActivityPipeline:
             _yolo_iou = float(_os.getenv("YOLO_IOU", "0.45"))
         except Exception:
             _yolo_conf, _yolo_iou = 0.25, 0.45
-        yolo = YoloService(self.yolo_weights, conf=_yolo_conf, iou=_yolo_iou)
-        mp_service = MediaPipeService()
-        antenna_refiner = AntennaRefiner(yolo_weights=self.yolo_weights, use_heuristic=True)
-        ocr = OcrUtils() if self.enable_ocr else None
+        yolo = get_yolo_service(self.yolo_weights, conf=_yolo_conf, iou=_yolo_iou)
+        mp_service = get_mediapipe_service()
+        antenna_refiner = get_antenna_refiner(self.yolo_weights, use_heuristic=True)
+        ocr = get_ocr_utils(self.enable_ocr)
 
         events: List[ActivityEvent] = []
         file_duration = get_video_duration_str(video_path)
@@ -889,10 +892,10 @@ class ActivityPipeline:
             _yolo_iou = float(_os.getenv("YOLO_IOU", "0.45"))
         except Exception:
             _yolo_conf, _yolo_iou = 0.25, 0.45
-        yolo = YoloService(self.yolo_weights, conf=_yolo_conf, iou=_yolo_iou)
-        mp_service = MediaPipeService()
-        antenna_refiner = AntennaRefiner(yolo_weights=self.yolo_weights, use_heuristic=True)
-        ocr = OcrUtils() if self.enable_ocr else None
+        yolo = get_yolo_service(self.yolo_weights, conf=_yolo_conf, iou=_yolo_iou)
+        mp_service = get_mediapipe_service()
+        antenna_refiner = get_antenna_refiner(self.yolo_weights, use_heuristic=True)
+        ocr = get_ocr_utils(self.enable_ocr)
 
         events: List[ActivityEvent] = []
         file_duration = get_video_duration_str(video_path)

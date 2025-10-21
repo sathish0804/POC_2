@@ -7,3 +7,8 @@ graceful_timeout = 30
 max_requests = 2000
 max_requests_jitter = 200
 bind = "0.0.0.0:8000"
+
+raw_env = [
+    "YOLO_WEIGHTS_PRELOAD=yolo11s.pt",
+    "PRELOAD_OCR=1",  # set to 0 to skip OCR preload
+]

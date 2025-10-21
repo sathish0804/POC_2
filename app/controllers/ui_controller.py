@@ -16,6 +16,7 @@ import math
 import time
 import multiprocessing as mp
 import concurrent.futures as cf
+from app.boot import get_pool
 import cv2
 from app.utils.video_utils import get_expected_sampled_frames
 
@@ -291,26 +292,26 @@ def _run_job(jid: str) -> None:
         t0 = time.perf_counter()
         all_events: List[Dict[str, Any]] = []
         completed_expected = 0
-        with cf.ProcessPoolExecutor(max_workers=num_processes, mp_context=mp.get_context("spawn")) as pool:
-            futures = []
-            for idx, (start_f, end_f) in enumerate(ranges):
-                if start_f >= end_f:
-                    continue
-                futures.append((idx, per_range_expected[idx], pool.submit(worker_run_range, video_path, start_f, end_f, pipeline_cfg)))
+        pool = get_pool(max_workers=num_processes)
+        futures = []
+        for idx, (start_f, end_f) in enumerate(ranges):
+            if start_f >= end_f:
+                continue
+            futures.append((idx, per_range_expected[idx], pool.submit(worker_run_range, video_path, start_f, end_f, pipeline_cfg)))
 
-            for idx, expected_cnt, fut in futures:
-                try:
-                    part = fut.result()
-                    if isinstance(part, list):
-                        all_events.extend(part)
-                    else:
-                        all_events.append(part)
-                except Exception:
-                    part = []
-                finally:
-                    completed_expected += int(expected_cnt)
-                    state["processed"] = int(completed_expected)
-                    _persist_state(jid, state)
+        for idx, expected_cnt, fut in futures:
+            try:
+                part = fut.result()
+                if isinstance(part, list):
+                    all_events.extend(part)
+                else:
+                    all_events.append(part)
+            except Exception:
+                part = []
+            finally:
+                completed_expected += int(expected_cnt)
+                state["processed"] = int(completed_expected)
+                _persist_state(jid, state)
 
         # Persist output assets to repo output/<timestamp> like original flow
         try:
