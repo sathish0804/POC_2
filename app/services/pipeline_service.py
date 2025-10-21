@@ -101,6 +101,15 @@ class ActivityPipeline:
     write_require_surface: bool = True
     write_ocr_min_chars: int = 14
 
+    # Preprocessing and robustness knobs for CCTV
+    enable_preproc: bool = True
+    preproc_gamma: float = 0.9
+    preproc_clahe: bool = True
+    enable_background_gate: bool = True
+    bg_alpha: float = 0.05
+    bg_thresh: int = 18
+    group_consensus_frames: int = 3
+
     def _map_activity_label(self, label: str) -> Tuple[int, str]:
         key = (label or "").strip().lower()
         normalized = key.replace("-", " ").replace("_", " ").strip()
@@ -122,6 +131,102 @@ class ActivityPipeline:
         if normalized in mapping:
             return mapping[normalized]
         return 0, (normalized.title() if normalized else "Unknown activity")
+
+    # ------------------------ Robust Preprocessing Helpers ------------------------
+    def _parse_poly(self, s: str, W: int, H: int) -> Optional[np.ndarray]:
+        if not s:
+            return None
+        try:
+            pts = []
+            for part in s.split(";"):
+                if not part:
+                    continue
+                x_str, y_str = part.split(",")
+                x = max(0, min(W - 1, int(float(x_str))))
+                y = max(0, min(H - 1, int(float(y_str))))
+                pts.append([x, y])
+            if len(pts) < 3:
+                return None
+            return np.array(pts, dtype=np.int32).reshape((-1, 1, 2))
+        except Exception:
+            return None
+
+    def _apply_roi_masks(self, frame_bgr: np.ndarray) -> np.ndarray:
+        H, W = frame_bgr.shape[:2]
+        include_s = os.getenv("ROI_INCLUDE_POLY", "").strip()
+        exclude_s = os.getenv("ROI_EXCLUDE_POLY", "").strip()
+        if not include_s and not exclude_s:
+            return frame_bgr
+        mask = np.ones((H, W), dtype=np.uint8) * 255
+        inc = self._parse_poly(include_s, W, H)
+        exc = self._parse_poly(exclude_s, W, H)
+        if inc is not None:
+            mask[:] = 0
+            cv2.fillPoly(mask, [inc], 255)
+        if exc is not None:
+            cv2.fillPoly(mask, [exc], 0)
+        out = frame_bgr.copy()
+        out[mask == 0] = 0
+        return out
+
+    def _photometric_norm(self, frame_bgr: np.ndarray) -> np.ndarray:
+        img = frame_bgr
+        if self.preproc_clahe:
+            try:
+                hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+                v = hsv[:, :, 2]
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+                hsv[:, :, 2] = clahe.apply(v)
+                img = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+            except Exception:
+                pass
+        try:
+            g = float(os.getenv("PREPROC_GAMMA", str(self.preproc_gamma)))
+        except Exception:
+            g = self.preproc_gamma
+        if g and abs(g - 1.0) > 1e-3:
+            try:
+                inv = 1.0 / max(1e-6, g)
+                table = ((np.arange(256) / 255.0) ** inv * 255.0).astype(np.uint8)
+                img = cv2.LUT(img, table)
+            except Exception:
+                pass
+        return img
+
+    def _background_gate(self, frame_bgr: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        # Returns (gated_bgr, fg_mask)
+        H, W = frame_bgr.shape[:2]
+        gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+        if not hasattr(self, "_bg") or self._bg is None or self._bg.shape != gray.shape:
+            self._bg = gray.astype(np.float32)
+        try:
+            alpha = float(os.getenv("BG_ALPHA", str(self.bg_alpha)))
+        except Exception:
+            alpha = self.bg_alpha
+        try:
+            thr = int(os.getenv("BG_THRESH", str(self.bg_thresh)))
+        except Exception:
+            thr = self.bg_thresh
+        cv2.accumulateWeighted(gray, self._bg, max(0.0, min(1.0, alpha)))
+        bg_u8 = cv2.convertScaleAbs(self._bg)
+        fg = cv2.absdiff(gray, bg_u8)
+        _, mask = cv2.threshold(fg, max(0, min(255, thr)), 255, cv2.THRESH_BINARY)
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_DILATE, kernel, iterations=1)
+        gated = frame_bgr.copy()
+        gated[mask == 0] = 0
+        return gated, mask
+
+    def _preprocess_frame(self, frame_bgr: np.ndarray) -> np.ndarray:
+        if not bool(self.enable_preproc):
+            return frame_bgr
+        img = frame_bgr
+        img = self._apply_roi_masks(img)
+        img = self._photometric_norm(img)
+        if bool(self.enable_background_gate):
+            img, _ = self._background_gate(img)
+        return img
 
     def process_video(self, video_path: str, progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None) -> List[ActivityEvent]:
         """Process an entire video at `sample_fps` and return activity events.
@@ -213,11 +318,14 @@ class ActivityPipeline:
             if self.verbose:
                 logger.debug(f"[Frame {index}] ts={ts:.2f}s: detection + landmarks + per-person crops")
 
-            frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-            detections = yolo.detect(frame_bgr)
-            mp_out = mp_service.process(frame_rgb)
-            green_flags = detect_green_flags(frame_bgr)
-            window_regions = detect_window_regions(frame_bgr)
+            # RAW vs preprocessed split: YOLO on preproc, MediaPipe on RAW
+            frame_bgr_raw = frame_bgr
+            frame_bgr_yolo = self._preprocess_frame(frame_bgr_raw)
+            detections = yolo.detect(frame_bgr_yolo)
+            frame_rgb_raw = cv2.cvtColor(frame_bgr_raw, cv2.COLOR_BGR2RGB)
+            mp_out = mp_service.process(frame_rgb_raw)
+            green_flags = detect_green_flags(frame_bgr_raw)
+            window_regions = detect_window_regions(frame_bgr_raw)
             if ocr is not None:
                 try:
                     date_str, time_str = ocr.extract_date_time(frame_bgr)
@@ -794,7 +902,12 @@ class ActivityPipeline:
                             kept.append(d)
                     return kept
                 distinct = _distinct_by_iou(highconf, merge_iou)
+                # Temporal consensus for group event
                 if len(distinct) > 2:
+                    self._group_consensus = getattr(self, "_group_consensus", 0) + 1
+                else:
+                    self._group_consensus = 0
+                if len(distinct) > 2 and self._group_consensus >= int(max(1, self.group_consensus_frames)):
                     person_boxes = [b for (_, _, b) in distinct]
                     gx1 = int(min(b[0] for b in person_boxes))
                     gy1 = int(min(b[1] for b in person_boxes))
@@ -824,7 +937,7 @@ class ActivityPipeline:
             # Write overlays/images only when debugging or when activities are present
             if self.save_debug_overlays or per_frame_activities:
                 try:
-                    annotate_and_save(frame_bgr, result_for_annot, tag=tag_base, out_dir=os.path.join(os.path.dirname(video_path), "output"))
+                    annotate_and_save(frame_bgr_raw, result_for_annot, tag=tag_base, out_dir=os.path.join(os.path.dirname(video_path), "output"))
                 except Exception:
                     pass
 
@@ -1014,10 +1127,13 @@ class ActivityPipeline:
                 detections_batched = [yolo.detect(img) for img in batch_frames]
 
             for (frame_idx, ts), frame_bgr, detections in zip(batch_meta, batch_frames, detections_batched):
-                frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-                mp_out = mp_service.process(frame_rgb)
-                green_flags = detect_green_flags(frame_bgr)
-                window_regions = detect_window_regions(frame_bgr)
+                frame_bgr_raw = frame_bgr
+                frame_bgr_yolo = self._preprocess_frame(frame_bgr_raw)
+                # detections is provided by batching; keep it as-is for YOLO outputs
+                frame_rgb_raw = cv2.cvtColor(frame_bgr_raw, cv2.COLOR_BGR2RGB)
+                mp_out = mp_service.process(frame_rgb_raw)
+                green_flags = detect_green_flags(frame_bgr_raw)
+                window_regions = detect_window_regions(frame_bgr_raw)
                 if ocr is not None:
                     try:
                         date_str, time_str = ocr.extract_date_time(frame_bgr)
@@ -1572,6 +1688,10 @@ class ActivityPipeline:
                             return kept
                         distinct = _distinct_by_iou(highconf, merge_iou)
                         if len(distinct) > 2:
+                            self._group_consensus = getattr(self, "_group_consensus", 0) + 1
+                        else:
+                            self._group_consensus = 0
+                        if len(distinct) > 2 and self._group_consensus >= int(max(1, self.group_consensus_frames)):
                             person_boxes = [b for (_, _, b) in distinct]
                             gx1 = int(min(b[0] for b in person_boxes))
                             gy1 = int(min(b[1] for b in person_boxes))
@@ -1601,7 +1721,7 @@ class ActivityPipeline:
                     # Write overlays/images only when debugging or when activities are present
                     if self.save_debug_overlays or per_frame_activities:
                         try:
-                            annotate_and_save(frame_bgr, result_for_annot, tag=tag_base, out_dir=os.path.join(os.path.dirname(video_path), "output"))
+                            annotate_and_save(frame_bgr_raw, result_for_annot, tag=tag_base, out_dir=os.path.join(os.path.dirname(video_path), "output"))
                         except Exception:
                             pass
 

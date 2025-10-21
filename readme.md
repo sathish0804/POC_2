@@ -1,117 +1,139 @@
 # CCTV Activity Detection (CPU-Only)
 
-Python pipeline for detecting loco pilot activities using YOLOv8 (Ultralytics), MediaPipe (Face/Hands/Pose), OCR (EasyOCR/Tesseract), and OpenCV.
+Python system to detect loco pilot activities from CCTV, running fully on CPU. It combines YOLOv8 detections, MediaPipe landmarks, OCR, and temporal logic to emit structured events and annotated media.
 
-## Setup
+## Core Business Logic
+- Detects and reports:
+  - Micro sleep and sleep states using eye metrics (EAR), head pose, PERCLOS-like statistics, and a sliding-window decision machine.
+  - Using cell phone vs walkie-talkie (antenna refinement) via YOLO + hand/face landmarks + heuristics.
+  - Writing while moving, gated by presence of a writing surface (book or OCR text) near lap.
+  - Packing events via repeated hand–bag interactions and IoU-over-time.
+  - Signal exchange with flag using green-flag detection and hand overlap near window region.
+  - More than two people (group) using de-duplicated person boxes.
+- Output is a list of `ActivityEvent` records with timestamps, evidence, and media references.
 
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r /Users/satishvanga/Documents/Vanga/POC_2/requirements.txt
-```
+## Architecture
+- Flask Web App:
+  - Blueprints:
+    - `health` (`/health/`): health probe.
+    - `ui`:
+      - HTML UI: `GET /`, `POST /start`, `GET /job/<id>`, `GET /results/<id>`, `GET /media/<id>/<path>`.
+      - JSON API: `POST /api/jobs`, `GET /api/jobs/<id>`, `GET /api/jobs/<id>/progress`, `GET /api/jobs/<id>/results`, `GET /api/jobs/<id>/media/<path>`.
+  - CORS headers added post-request; JSON error handlers for `/api/*`.
+  - Logging via Loguru with rotation to `output/app.log`.
+- Processing Model:
+  - Background job per upload:
+    - Video saved to temp dir, a thread orchestrates parallel processing across a shared `ProcessPoolExecutor`.
+    - The video is split into ~6s chunks; each worker runs pipeline range processing and returns events.
+    - Progress is tracked by expected sampled frames per range at `sample_fps`.
+  - Pipeline (`ActivityPipeline`):
+    - Services from `model_cache`: `YoloService` (CPU), `MediaPipeService`, `OcrUtils`, `AntennaRefiner`.
+    - Preprocessing: ROI include/exclude masks, CLAHE, gamma, simple background gating to suppress static background.
+    - Detection flow per sampled frame:
+      1) YOLO detects persons and objects; persons are filtered by confidence, area, and NMS IoU.
+      2) MediaPipe face/hands/pose landmarks collected and mapped to frame coords.
+      3) Heuristics:
+         - Phone: area/aspect checks; hand–phone overlap; suppress glare-only artifacts; landmark-only inference with head-down/hand-height suppression; antenna refiner to reclassify walkie-talkie (suppressed from logging).
+         - Flag: green flag detection + overlap with hands inside window region.
+         - Sleep: basic tracker OR advanced `SleepDecisionMachine` with sliding windows and hysteresis; emits micro-sleep and sleep.
+         - Writing: requires a lap-surface (book class or OCR text >= min chars) to emit.
+         - Packing: hand–bag interactions in torso band with temporal motion.
+         - Group: >2 distinct high-confidence persons after IoU merging.
+      4) Annotated image and short clip are generated for events.
+      5) Events are mapped to business `activityType` and human description.
+    - Range mode supports YOLO micro-batching (`YOLO_BATCH`) and respects `max_frames`.
 
-## Run (CLI)
-
-```bash
-python /Users/satishvanga/Documents/Vanga/POC_2/main.py \
-  --video /Users/satishvanga/Documents/Vanga/POC_2/example_data/video_cfr.mp4 \
-  --model yolov8m.pt \
-  --fps 1 \
-  --out /Users/satishvanga/Documents/Vanga/POC_2/output/events.json \
-  --disable_ocr  # optional to skip OCR downloads on first run
-```
-
-- First run may download YOLO weights and OCR models.
-- The script writes JSON events to `--out`.
-
-## Run (API Server)
-
-Start the server:
-
-```bash
-python /Users/satishvanga/Documents/Vanga/POC_2/api_main.py
-```
-
-```bash
-uvicorn controllers.api:app --host 0.0.0.0 --port 8000 --reload
-```
-
-Health check:
-
-```bash
-curl -s http://localhost:8000/healthz
-```
-
-Process a local upload (multipart form):
-
-```bash
-curl -s -X POST http://localhost:8000/process \
-  -F tripId=DEMO-TRIP-001 \
-  -F crewName="Demo Crew" \
-  -F crewId=C-001 \
-  -F crewRole=1 \
-  -F cvvrFile=@/Users/satishvanga/Documents/Vanga/POC_2/example_data/video_cfr.mp4 \
-  -F model=yolov8l.pt -F fps=1 -F disable_ocr=false -F verbose=false -F max_frames=0
-```
-
-Process by URL with JSON payload:
-
-```bash
-curl -s -X POST http://localhost:8000/process-by-url \
-  -H 'Content-Type: application/json' \
-  -d '{
-        "tripId": "DEMO-TRIP-001",
-        "cvvrFileUrl": "/Users/satishvanga/Documents/Vanga/POC_2/example_data/video_cfr.mp4",
-        "crews": [{"crewName": "Demo Crew", "crewId": "C-001", "crewRole": 1}]
-      }'
-```
-
-Both endpoints return a JSON array of events using the same schema as `output/events.json`.
-
-## Logging
-
-- Logs are written to `/Users/satishvanga/Documents/Vanga/POC_2/output/app.log` (rotates at ~10MB, keeps 7 days).
-- API startup configures logging automatically. To enable verbose logs for a request, set `verbose=true` (form field) on `/process`.
-
-## Activities
-1. Micro sleep (eyes closed ≥2s with low motion) [advanced: sliding windows]
-2. Sleeping (high PERCLOS with stillness and head-down) [advanced]
-3. Using cell phone (hand-phone IoU > threshold)
-4. Writing while moving (hand motion near pen/notebook)
-5. Packing (hand overlaps bag frequently)
-6. Calling signals (arm extension gesture repeated)
-7. Signal exchange with flag (flag + hand interaction)
-
-## JSON Schema
-
+## Data Model
+`app/models/activity_event.py`:
 ```json
 {
   "tripId": "",
-  "activityType": 1,
+  "activityType": 0,
   "des": "",
+  "objectType": "cell phone | sleep | ...",
   "fileUrl": "",
-  "fileDuration": "",
-  "activityStartTime": "",
+  "fileDuration": "HH:MM:SS",
+  "activityStartTime": "seconds.string",
+  "activityEndTime": "seconds.string | null",
   "crewName": "",
   "crewId": "",
   "crewRole": 1,
   "date": "",
   "time": "",
   "filename": "",
-  "peopleCount": 1
+  "peopleCount": 1,
+  "evidence": { "rule": "..." },
+  "activityImage": "frame_..._activity.jpg",
+  "activityClip": "frame_... .mp4"
 }
 ```
 
-## Notes
-- Class IDs for phone/bag/flag/pen are placeholders; adapt to your YOLO model `names`.
-- Temporal thresholds assume ~1 FPS sampling; they auto-adjust using timestamps but tune as needed.
-- Everything runs on CPU; for speed, consider disabling OCR with `--disable_ocr`.
+## Setup
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r /Users/satishvanga/Documents/Vanga/POC_2/requirements.txt
+```
 
-## Advanced sleep detection (optional)
+## Run (Web UI + API)
+- Dev server:
+```bash
+python /Users/satishvanga/Documents/Vanga/POC_2/run.py
+# opens on http://localhost:5000
+```
+- Health:
+```bash
+curl -s http://localhost:5000/health/
+```
+- UI:
+  - Visit `http://localhost:5000/` to upload a video and view progress/results.
+- API:
+```bash
+# create job via multipart
+curl -s -X POST http://localhost:5000/api/jobs \
+  -F tripId=DEMO-TRIP-001 \
+  -F cvvrFile=@/Users/satishvanga/Documents/Vanga/POC_2/example_data/video_cfr.mp4
 
-- Enable via `ActivityPipeline(use_advanced_sleep=True)`.
-- Computes EAR and a coarse eye-open probability, smooths with EWMA, and applies a sliding-window, hysteresis decision machine:
-  - Microsleep: continuous closure ≥ 2s with low head motion (short window)
-  - Drowsy: PERCLOS(mid window) > ~0.4
-  - Sleep: PERCLOS(mid window) > ~0.8 with stillness and head-down
-  - Recovery: sustained eye-open and neutral head pose
-- If landmarks are unreliable, logic degrades gracefully and avoids false alarms (may emit no sleep state).
+# get job status
+curl -s http://localhost:5000/api/jobs/<job_id>
+
+# stream media (supports Range for MP4)
+curl -I http://localhost:5000/api/jobs/<job_id>/media/<relative_path_from_asset_root>
+```
+
+## Run (CLI, optional)
+If you have a separate entry like `main.py`, you can still run ad-hoc processing. For parallel IO benchmarks:
+```bash
+python /Users/satishvanga/Documents/Vanga/POC_2/run.py multiproc --video /path/to/video.mp4 --processes 8
+```
+
+## Configuration
+- Environment knobs:
+  - Pooling: `POOL_PROCS` (default min(cpu, 6))
+  - Sampling: `SAMPLE_FPS` (default 0.5)
+  - Chunk size: `CHUNK_SECONDS` (default 6)
+  - YOLO: `YOLO_WEIGHTS_PRELOAD`, `YOLO_CONF` (default 0.25), `YOLO_IOU` (0.45), `YOLO_BATCH` (1+)
+  - Threads: `TORCH_NUM_THREADS`, `TORCH_NUM_INTEROP_THREADS`, `OPENCV_NUM_THREADS`
+  - Preprocessing: `PREPROC_GAMMA`, `ROI_INCLUDE_POLY`, `ROI_EXCLUDE_POLY`, `BG_ALPHA`, `BG_THRESH`
+  - Logging: `LOG_PATH` (default `output/app.log`); `FRONTEND_ORIGIN` for CORS
+  - OCR: `PRELOAD_OCR` (0/1), and pipeline `enable_ocr` flag
+- Advanced sleep:
+  - Enable via `use_advanced_sleep=True` in pipeline config.
+  - Tunables: short/mid/long windows, smoothing alpha, closed-run threshold, PERCLOS thresholds, head-pitch degrees, recovery holds.
+
+## Outputs
+- Events saved in job asset root under `output/<timestamp>/events.json`.
+- Annotated images `*_activity.jpg` and short clips near the event timestamp.
+- Log file at `/Users/satishvanga/Documents/Vanga/POC_2/output/app.log`.
+
+## Tech Stack
+- Flask 3 for web/API; Loguru for logging.
+- Ultralytics YOLOv8 (CPU), MediaPipe Face/Hands/Pose.
+- EasyOCR/Tesseract (optional) for surface/text gating.
+- OpenCV for IO, preprocessing, overlays, and clips.
+- Multiprocessing with `spawn` and a shared `ProcessPoolExecutor`.
+
+## Notes and Tuning
+- Everything is CPU-only; lower `imgsz` or `YOLO_CONF` to adjust performance/recall.
+- OCR downloads on first use; set `enable_ocr=False` for speed if not required.
+- Person filtering uses minimum area and IoU de-duplication to reduce spurious extra persons.
+- Walkie-talkie detections are suppressed from logging (misuse of phone is the target).

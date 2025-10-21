@@ -253,9 +253,10 @@ class SleepDecisionMachineV2:
         if face_quality is not None and face_quality < 0.3:
             eye_rel = False
 
-        # Posture conditions
-        head_down = (pitch_s is not None) and (pitch_s >= self.cfg.head_pitch_down_deg)
-        head_very_down = (pitch_s is not None) and (pitch_s >= self.cfg.head_pitch_sleep_deg)
+        # Posture conditions (treat backward pitch like down by using absolute pitch)
+        abs_pitch = abs(pitch_s) if pitch_s is not None else None
+        head_down = (abs_pitch is not None) and (abs_pitch >= self.cfg.head_pitch_down_deg)
+        head_very_down = (abs_pitch is not None) and (abs_pitch >= self.cfg.head_pitch_sleep_deg)
 
         still = motion_mag <= self.cfg.motion_px_thresh
 
@@ -280,19 +281,19 @@ class SleepDecisionMachineV2:
         microsleep_eye = False
         blink_like = False
         if eye_rel and open_s is not None:
-            if st["closed_run_s"] >= self.cfg.microsleep_min_s and still:
+            if st["closed_run_s"] >= self.cfg.microsleep_min_s and (still or perclos_mw >= 0.90):
                 microsleep_eye = True
             elif 0.0 < st["closed_run_s"] <= self.cfg.blink_max_s:
                 blink_like = True
 
-        # Posture path (no-eye)
+        # Posture path (no-eye) – use absolute pitch
         microsleep_posture = False
         sleep_posture = False
         if not eye_rel:
             if pitch_s is not None:
-                if pitch_s >= self.cfg.no_eye_pitch_sleep_deg and still:
+                if abs_pitch is not None and abs_pitch >= self.cfg.no_eye_pitch_sleep_deg and still:
                     sleep_posture = True
-                elif pitch_s >= self.cfg.no_eye_pitch_drowsy_deg and still:
+                elif abs_pitch is not None and abs_pitch >= self.cfg.no_eye_pitch_drowsy_deg and still:
                     microsleep_posture = True
 
         # Escalation / recovery logic
@@ -319,7 +320,13 @@ class SleepDecisionMachineV2:
 
         elif state == "drowsy":
             # Consider escalation to sleep
-            sleep_eye = (perclos_mw >= self.cfg.perclos_sleep and head_down and still) if eye_rel else False
+            # Allow sleep with very high PERCLOS or long continuous closure even without head-down
+            sleep_eye = False
+            if eye_rel:
+                if perclos_mw >= self.cfg.perclos_sleep and (head_down or perclos_mw >= 0.90):
+                    sleep_eye = True
+                elif st.get("closed_run_s", 0.0) >= max(8.0, self.cfg.microsleep_min_s + 6.0):
+                    sleep_eye = True
             sleep_any = sleep_eye or sleep_posture
             if sleep_any:
                 start_hold("esc_hold_start")
