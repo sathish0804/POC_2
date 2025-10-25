@@ -331,6 +331,7 @@ class ActivityPipeline:
             frame_bgr_raw = frame_bgr
             frame_bgr_yolo = self._preprocess_for_yolo(frame_bgr_raw)
             detections = yolo.detect(frame_bgr_yolo)
+            logger.info(f"[DEBUG] YOLO detected {len(detections)} objects: {[(cid, f'{score:.3f}') for cid, score, _ in detections]}")
             frame_rgb_raw = cv2.cvtColor(frame_bgr_raw, cv2.COLOR_BGR2RGB)
             mp_out = mp_service.process(frame_rgb_raw)
             green_flags = detect_green_flags(frame_bgr_raw)
@@ -357,6 +358,7 @@ class ActivityPipeline:
                 if cid == 0 and float(score) >= float(self.person_min_conf)
                 and max(0.0, (box[2] - box[0])) * max(0.0, (box[3] - box[1])) >= min_area
             ]
+            logger.info(f"[DEBUG] Person candidates after filtering: {len(person_candidates)} (min_conf={self.person_min_conf}, min_area={min_area:.1f})")
             person_candidates.sort(key=lambda d: float(d[1]), reverse=True)
             persons: List[Tuple[int, float, Tuple[float, float, float, float]]] = []
             for det in person_candidates:
@@ -416,15 +418,29 @@ class ActivityPipeline:
                     c_face = _count_inside(b, pts_face)
                     c_hands = _count_inside(b, pts_hands)
                     c_pose = _count_inside(b, pts_pose)
-                    # Require face/pose; allow hands-only only if strong and supported by face/pose
-                    if (c_pose >= 10) or (c_face >= 20) or ((c_hands >= 12) and (c_face >= 10 or c_pose >= 6)) or (float(conf_det) >= 0.80):
+                    
+                    # DEBUG: Log detection details
+                    logger.info(f"[DEBUG] Person detection: conf={conf_det:.3f}, face_pts={c_face}, hand_pts={c_hands}, pose_pts={c_pose}")
+                    
+                    # RELAXED VALIDATION: Allow persons with lower landmark requirements
+                    # Original: (c_pose >= 10) or (c_face >= 20) or ((c_hands >= 12) and (c_face >= 10 or c_pose >= 6)) or (float(conf_det) >= 0.80)
+                    # New: Much more permissive
+                    if (c_pose >= 3) or (c_face >= 5) or (c_hands >= 3) or (float(conf_det) >= 0.30):
                         validated.append(det)
+                        logger.info(f"[DEBUG] Person VALIDATED: conf={conf_det:.3f}")
+                    else:
+                        logger.info(f"[DEBUG] Person REJECTED: conf={conf_det:.3f}")
+                        
                 if validated:
                     persons = validated
+                    logger.info(f"[DEBUG] Validated {len(validated)} persons out of {len(persons)} candidates")
+                else:
+                    logger.warning(f"[DEBUG] NO PERSONS VALIDATED! All {len(persons)} candidates rejected")
             objects = [(cid, score, box) for (cid, score, box) in detections if cid != 0]
 
             person_boxes_np = [np.array(b, dtype=float) for (_, _, b) in persons]
             track_ids = tracker.assign(person_boxes_np, float(ts)) if person_boxes_np else []
+            logger.info(f"[DEBUG] Final person count: {len(persons)}, track_ids: {track_ids}")
 
             per_frame_activities: List[Dict[str, Any]] = []
 
