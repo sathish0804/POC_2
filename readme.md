@@ -13,8 +13,8 @@ Python system to detect loco pilot activities from CCTV, running fully on CPU. I
 - Output is a list of `ActivityEvent` records with timestamps, evidence, and media references.
 
 ## Architecture
-- Flask Web App:
-  - Blueprints:
+- FastAPI Web App:
+  - Routers:
     - `health` (`/health/`): health probe.
     - `ui`:
       - HTML UI: `GET /`, `POST /start`, `GET /job/<id>`, `GET /results/<id>`, `GET /media/<id>/<path>`.
@@ -126,7 +126,7 @@ python /Users/satishvanga/Documents/Vanga/POC_2/run.py multiproc --video /path/t
 - Log file at `/Users/satishvanga/Documents/Vanga/POC_2/output/app.log`.
 
 ## Tech Stack
-- Flask 3 for web/API; Loguru for logging.
+- FastAPI for web/API; Loguru for logging.
 - Ultralytics YOLOv8 (CPU), MediaPipe Face/Hands/Pose.
 - EasyOCR/Tesseract (optional) for surface/text gating.
 - OpenCV for IO, preprocessing, overlays, and clips.

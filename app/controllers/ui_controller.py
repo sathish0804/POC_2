@@ -6,7 +6,9 @@ import tempfile
 import uuid
 import threading
 from typing import Dict, Any, List, Tuple
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request, Response as FastAPIResponse
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
+from fastapi.templating import Jinja2Templates
 import mimetypes
 from loguru import logger
 import json
@@ -19,9 +21,9 @@ import concurrent.futures as cf
 from app.boot import get_pool
 import cv2
 from app.utils.video_utils import get_expected_sampled_frames
+from app.models.job_models import JobResponse, JobProgress, JobStatus, JobResults
 
-
-ui_bp = Blueprint("ui", __name__)
+router = APIRouter()
 JOBS: Dict[str, Dict[str, Any]] = {}
 
 # Persist lightweight job state to survive worker restarts
@@ -88,7 +90,7 @@ def _count_total_frames(video_path: str) -> int:
     if not cap.isOpened():
         return 0
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-    logger.info(f"[Flask] _count_total_frames: {video_path}, total={total}")
+    logger.info(f"[FastAPI] _count_total_frames: {video_path}, total={total}")
     if total <= 0:
         total = 0
         while True:
@@ -97,7 +99,7 @@ def _count_total_frames(video_path: str) -> int:
                 break
             total += 1
     cap.release()
-    logger.info(f"[Flask] _count_total_frames: {video_path}, total={total}")
+    logger.info(f"[FastAPI] _count_total_frames: {video_path}, total={total}")
     return total
 
 
@@ -105,7 +107,7 @@ def _split_frame_ranges(total_frames: int, num_processes: int) -> List[Tuple[int
     """Evenly partition [0, total_frames) into num_processes contiguous ranges."""
     if num_processes <= 0:
         return [(0, total_frames)]
-    logger.info(f"[Flask] _split_frame_ranges:, total_frames={total_frames}, num_processes={num_processes}")
+    logger.info(f"[FastAPI] _split_frame_ranges:, total_frames={total_frames}, num_processes={num_processes}")
     base = total_frames // num_processes
     remainder = total_frames % num_processes
     ranges: List[Tuple[int, int]] = []
@@ -115,7 +117,7 @@ def _split_frame_ranges(total_frames: int, num_processes: int) -> List[Tuple[int
         end = start + count
         ranges.append((start, end))
         start = end
-    logger.info(f"[Flask] _split_frame_ranges: , ranges={ranges}")
+    logger.info(f"[FastAPI] _split_frame_ranges: , ranges={ranges}")
     return ranges
 
 
@@ -204,7 +206,7 @@ def worker_run_range(vpath: str, start_f: int, end_f: int, pipeline_cfg: Dict[st
 
 def _run_job(jid: str) -> None:
     state = JOBS.get(jid)
-    logger.info(f"[Flask] _run_job start jid={jid}, has_state={bool(state)}")
+    logger.info(f"[FastAPI] _run_job start jid={jid}, has_state={bool(state)}")
     try:
         video_path = state["video_path"]
         num_processes = max(1, min(int(os.getenv("POOL_PROCS", "6")), (mp.cpu_count() or 1)))
@@ -228,9 +230,9 @@ def _run_job(jid: str) -> None:
             repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
             try:
                 os.chdir(repo_root)
-                logger.info(f"[Flask] _run_job: reset cwd to {repo_root}")
+                logger.info(f"[FastAPI] _run_job: reset cwd to {repo_root}")
             except Exception as cwd_err:
-                logger.warning(f"[Flask] _run_job: failed to reset cwd: {cwd_err}")
+                logger.warning(f"[FastAPI] _run_job: failed to reset cwd: {cwd_err}")
             try:
                 os.environ.setdefault("ULTRALYTICS_SETTINGS_DIR", os.path.join(repo_root, "output", ".ultralytics"))
             except Exception:
@@ -266,7 +268,7 @@ def _run_job(jid: str) -> None:
             sleep_cfg_no_eye_head_down_deg=32.0,
         )
 
-        logger.info(f"[Flask] Job {jid} config: yolo_weights={pipeline_cfg['yolo_weights']}, sample_fps={pipeline_cfg['sample_fps']}, native_frames={total_frames}")
+        logger.info(f"[FastAPI] Job {jid} config: yolo_weights={pipeline_cfg['yolo_weights']}, sample_fps={pipeline_cfg['sample_fps']}, native_frames={total_frames}")
 
         chunk_seconds_env = os.getenv("CHUNK_SECONDS", "").strip()
         if chunk_seconds_env:
@@ -333,7 +335,7 @@ def _run_job(jid: str) -> None:
             else:
                 state["asset_root"] = None
         except Exception as persist_err:
-            logger.warning(f"[Flask] Failed to persist activity assets: {persist_err}")
+            logger.warning(f"[FastAPI] Failed to persist activity assets: {persist_err}")
             state["asset_root"] = None
 
         # Persist detected events to asset_root for cross-worker results access
@@ -343,16 +345,16 @@ def _run_job(jid: str) -> None:
                 with open(events_path, "w", encoding="utf-8") as f:
                     json.dump(all_events or [], f, ensure_ascii=False, indent=2)
         except Exception as _e:
-            logger.warning(f"[Flask] Failed to write events.json: {_e}")
+            logger.warning(f"[FastAPI] Failed to write events.json: {_e}")
 
         elapsed = time.perf_counter() - t0
         state["processed"] = int(completed_expected)
         state["done"] = True
         state["events"] = all_events
         _persist_state(jid, state)
-        logger.info(f"[Flask] Parallel pipeline completed in {elapsed:.2f}s (yolo_weights={pipeline_cfg['yolo_weights']}, sample_fps={pipeline_cfg['sample_fps']}, sampled_frames={state['processed']}/{state['total']}, native_frames={total_frames}, events={len(all_events)})")
+        logger.info(f"[FastAPI] Parallel pipeline completed in {elapsed:.2f}s (yolo_weights={pipeline_cfg['yolo_weights']}, sample_fps={pipeline_cfg['sample_fps']}, sampled_frames={state['processed']}/{state['total']}, native_frames={total_frames}, events={len(all_events)})")
     except Exception as e:
-        logger.exception(f"[Flask] _run_job crashed jid={jid}: {e}")
+        logger.exception(f"[FastAPI] _run_job crashed jid={jid}: {e}")
         if state is None:
             state = {"processed": 0, "total": 0}
             JOBS[jid] = state
@@ -365,30 +367,36 @@ def _run_job(jid: str) -> None:
         except Exception:
             pass
 
-@ui_bp.get("/")
-def index():
+@router.get("/", response_class=HTMLResponse)
+async def index(request: Request):
     """Render the landing page to upload a CVVR file and Trip ID."""
-    return render_template("index.html")
+    templates = request.app.state.templates
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
-@ui_bp.post("/start")
-def start():
+@router.post("/start", response_class=HTMLResponse)
+async def start(
+    request: Request,
+    trip_id: str = Form(...),
+    cvvr_file: UploadFile = File(...)
+):
     """Create a processing job for the uploaded video and start a background worker."""
-    trip_id = request.form.get("tripId", "").strip()
-    file = request.files.get("cvvrFile")
-
-    if not trip_id:
-        flash("tripId is required", "error")
-        return redirect(url_for("ui.index"))
-    if file is None or not getattr(file, "filename", None):
-        flash("cvvrFile is required", "error")
-        return redirect(url_for("ui.index"))
+    if not trip_id.strip():
+        raise HTTPException(status_code=400, detail="tripId is required")
+    
+    if not cvvr_file.filename:
+        raise HTTPException(status_code=400, detail="cvvrFile is required")
 
     tmp_dir = tempfile.mkdtemp(prefix="upload_")
-    suffix = os.path.splitext(file.filename)[1] or ".mp4"
+    suffix = os.path.splitext(cvvr_file.filename)[1] or ".mp4"
     video_path = os.path.join(tmp_dir, f"input{suffix}")
-    file.save(video_path)
-    logger.info(f"[Flask] Uploaded video saved to {video_path}")
+    
+    # Save uploaded file
+    with open(video_path, "wb") as buffer:
+        content = await cvvr_file.read()
+        buffer.write(content)
+    
+    logger.info(f"[FastAPI] Uploaded video saved to {video_path}")
 
     job_id = uuid.uuid4().hex
     JOBS[job_id] = {
@@ -405,7 +413,7 @@ def start():
     try:
         # Prefill total for immediate UI feedback
         pref_total = int(get_expected_sampled_frames(video_path, float(os.getenv("SAMPLE_FPS", "0.5"))))
-        logger.info(f"[Flask] start: pref_total={pref_total}")
+        logger.info(f"[FastAPI] start: pref_total={pref_total}")
         if pref_total <= 0:
             dur = _ffprobe_duration_seconds(video_path)
             pref_total = int(math.ceil(dur)) if dur > 0 else 0
@@ -416,55 +424,58 @@ def start():
 
     t = threading.Thread(target=_run_job, args=(job_id,), daemon=False)
     t.start()
-    logger.info(f"[Flask] Started background job thread for {job_id}, ident={t.ident}")
-    return redirect(url_for("ui.job", job_id=job_id))
+    logger.info(f"[FastAPI] Started background job thread for {job_id}, ident={t.ident}")
+    
+    # Redirect to job page
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=f"/job/{job_id}", status_code=302)
 
 
-@ui_bp.get("/job/<job_id>")
-def job(job_id: str):
+@router.get("/job/{job_id}", response_class=HTMLResponse)
+async def job(request: Request, job_id: str):
     """Render job page which polls progress for the given job id."""
     # Allow page to load even if in-memory state is missing; progress polling relies on persisted state
-    return render_template("job.html", job_id=job_id)
+    templates = request.app.state.templates
+    return templates.TemplateResponse("job.html", {"request": request, "job_id": job_id})
 
 
-@ui_bp.get("/progress/<job_id>")
-def progress(job_id: str):
+@router.get("/progress/{job_id}", response_model=JobProgress)
+async def progress(job_id: str):
     """Return JSON progress for a job from the persisted lightweight state."""
     persisted = _load_state(job_id)
     if not persisted:
         time.sleep(0.05)
         persisted = _load_state(job_id)
         if not persisted:
-            return jsonify({
-                "processed": 0,
-                "total": 0,
-                "done": False,
-                "error": None,
-                "notFound": True,
-            }), 200
+            return JobProgress(
+                processed=0,
+                total=0,
+                done=False,
+                error=None,
+                not_found=True
+            )
 
-    return jsonify({
-        "processed": int(persisted.get("processed", 0)),
-        "total": int(persisted.get("total", 0)),
-        "done": bool(persisted.get("done", False)),
-        "error": persisted.get("error"),
-    })
+    return JobProgress(
+        processed=int(persisted.get("processed", 0)),
+        total=int(persisted.get("total", 0)),
+        done=bool(persisted.get("done", False)),
+        error=persisted.get("error")
+    )
 
 
-@ui_bp.get("/results/<job_id>")
-def results(job_id: str):
+@router.get("/results/{job_id}", response_class=HTMLResponse)
+async def results(request: Request, job_id: str, page: int = 1, page_size: int = 25):
     """Render paginated results for detected events of the given job."""
     # Try in-memory first; fall back to persisted state so this works across workers
     state = JOBS.get(job_id)
     if not state:
         persisted = _load_state(job_id)
         if not persisted:
-            flash("Invalid job id", "error")
-            return redirect(url_for("ui.index"))
+            raise HTTPException(status_code=404, detail="Invalid job id")
         state = persisted
     if state.get("error"):
-        flash(f"Processing failed: {state['error']}", "error")
-        return redirect(url_for("ui.index"))
+        raise HTTPException(status_code=500, detail=f"Processing failed: {state['error']}")
+    
     events = state.get("events") or []
     trip_id = state.get("trip_id") or ""
 
@@ -477,14 +488,7 @@ def results(job_id: str):
         except Exception:
             events = []
 
-    try:
-        page = max(1, int(request.args.get("page", 1)))
-    except Exception:
-        page = 1
-    try:
-        page_size = int(request.args.get("page_size", 25))
-    except Exception:
-        page_size = 25
+    page = max(1, page)
     page_size = max(1, min(100, page_size))
 
     total = len(events)
@@ -495,30 +499,34 @@ def results(job_id: str):
     end = min(start + page_size, total)
     paged_events = events[start:end]
 
-    return render_template(
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
         "results.html",
-        events=paged_events,
-        trip_id=trip_id,
-        job_id=job_id,
-        page=page,
-        page_size=page_size,
-        total=total,
-        start=start,
-        end=end,
-        total_pages=total_pages,
+        {
+            "request": request,
+            "events": paged_events,
+            "trip_id": trip_id,
+            "job_id": job_id,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "start": start,
+            "end": end,
+            "total_pages": total_pages,
+        }
     )
 
 
-@ui_bp.get("/media/<job_id>/<path:filename>")
-def media(job_id: str, filename: str):
+@router.get("/media/{job_id}/{filename:path}")
+async def media(request: Request, job_id: str, filename: str):
     """Serve media files from the job's asset root; supports HTTP range for MP4 streaming."""
     # Support cross-worker access by falling back to persisted state
     state = JOBS.get(job_id) or _load_state(job_id)
     if not state:
-        return jsonify({"error": "not_found"}), 404
+        raise HTTPException(status_code=404, detail="not_found")
     root = state.get("asset_root")
     if not root:
-        return jsonify({"error": "no_assets"}), 404
+        raise HTTPException(status_code=404, detail="no_assets")
 
     # Resolve and validate path
     abs_root = os.path.abspath(root)
@@ -526,16 +534,17 @@ def media(job_id: str, filename: str):
     try:
         # commonpath raises on different drives; guard with try
         if os.path.commonpath([abs_root, file_path]) != abs_root:
-            return jsonify({"error": "file_missing"}), 404
+            raise HTTPException(status_code=404, detail="file_missing")
     except Exception:
-        return jsonify({"error": "file_missing"}), 404
+        raise HTTPException(status_code=404, detail="file_missing")
     if not os.path.isfile(file_path):
-        return jsonify({"error": "file_missing"}), 404
+        raise HTTPException(status_code=404, detail="file_missing")
 
     mime, _ = mimetypes.guess_type(file_path)
     # Fallback for common case where mimetypes may not detect MP4
     if file_path.lower().endswith(".mp4"):
         mime = "video/mp4"
+    
     if mime == "video/mp4":
         # Support HTTP Range for MP4 streaming
         range_header = request.headers.get("Range")
@@ -548,44 +557,58 @@ def media(job_id: str, filename: str):
                 start = max(0, start)
                 end = min(file_size - 1, end)
                 length = end - start + 1
-                with open(file_path, "rb") as f:
-                    f.seek(start)
-                    data = f.read(length)
-                resp = Response(data, 206, mimetype=mime, direct_passthrough=True)
-                resp.headers.add("Content-Range", f"bytes {start}-{end}/{file_size}")
-                resp.headers.add("Accept-Ranges", "bytes")
-                resp.headers.add("Content-Length", str(length))
-                return resp
+                
+                def iter_file():
+                    with open(file_path, "rb") as f:
+                        f.seek(start)
+                        yield f.read(length)
+                
+                headers = {
+                    "Content-Range": f"bytes {start}-{end}/{file_size}",
+                    "Accept-Ranges": "bytes",
+                    "Content-Length": str(length)
+                }
+                return StreamingResponse(iter_file(), status_code=206, media_type=mime, headers=headers)
             except Exception:
                 pass  # fall back to full file
-        with open(file_path, "rb") as f:
-            data = f.read()
-        resp = Response(data, 200, mimetype=mime, direct_passthrough=True)
-        resp.headers.add("Accept-Ranges", "bytes")
-        resp.headers.add("Content-Length", str(file_size))
-        return resp
+        
+        def iter_file():
+            with open(file_path, "rb") as f:
+                yield from f
+        
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(file_size)
+        }
+        return StreamingResponse(iter_file(), media_type=mime, headers=headers)
 
     # Images and others
-    return send_from_directory(abs_root, os.path.relpath(file_path, abs_root))
+    return FileResponse(file_path)
 
 
 # --------------------- JSON API endpoints for external UI ---------------------
 
-@ui_bp.post("/api/jobs")
-def api_create_job():
+@router.post("/api/jobs", response_model=JobResponse)
+async def api_create_job(
+    request: Request,
+    trip_id: str = Form(...),
+    cvvr_file: UploadFile = File(...)
+):
     """Create a job via API and start background processing; returns endpoints for polling and results."""
-    trip_id = request.form.get("tripId", "").strip()
-    file = request.files.get("cvvrFile")
-
-    if not trip_id:
-        return jsonify({"error": "tripId is required"}), 400
-    if file is None or not getattr(file, "filename", None):
-        return jsonify({"error": "cvvrFile is required"}), 400
+    if not trip_id.strip():
+        raise HTTPException(status_code=400, detail="tripId is required")
+    if not cvvr_file.filename:
+        raise HTTPException(status_code=400, detail="cvvrFile is required")
 
     tmp_dir = tempfile.mkdtemp(prefix="upload_")
-    suffix = os.path.splitext(file.filename)[1] or ".mp4"
+    suffix = os.path.splitext(cvvr_file.filename)[1] or ".mp4"
     video_path = os.path.join(tmp_dir, f"input{suffix}")
-    file.save(video_path)
+    
+    # Save uploaded file
+    with open(video_path, "wb") as buffer:
+        content = await cvvr_file.read()
+        buffer.write(content)
+    
     logger.info(f"[API] Uploaded video saved to {video_path}")
 
     job_id = uuid.uuid4().hex
@@ -614,18 +637,18 @@ def api_create_job():
     t.start()
     logger.info(f"[API] Started background job thread for {job_id}, ident={t.ident}")
 
-    base = request.host_url.rstrip("/")
-    return jsonify({
-        "job_id": job_id,
-        "status_url": f"{base}/api/jobs/{job_id}",
-        "progress_url": f"{base}/api/jobs/{job_id}/progress",
-        "results_url": f"{base}/api/jobs/{job_id}/results",
-        "media_url_prefix": f"{base}/api/jobs/{job_id}/media",
-    }), 201
+    base_url = str(request.base_url).rstrip("/")
+    return JobResponse(
+        job_id=job_id,
+        status_url=f"{base_url}/api/jobs/{job_id}",
+        progress_url=f"{base_url}/api/jobs/{job_id}/progress",
+        results_url=f"{base_url}/api/jobs/{job_id}/results",
+        media_url_prefix=f"{base_url}/api/jobs/{job_id}/media"
+    )
 
 
-@ui_bp.get("/api/jobs/<job_id>")
-def api_get_job(job_id: str):
+@router.get("/api/jobs/{job_id}", response_model=JobStatus)
+async def api_get_job(job_id: str):
     """Return job status summary as JSON (processed/total/percent/done/error)."""
     state = JOBS.get(job_id) or _load_state(job_id) or {
         "processed": 0, "total": 0, "done": False, "error": None, "trip_id": None
@@ -635,48 +658,48 @@ def api_get_job(job_id: str):
     done = bool(state.get("done", False))
     error = state.get("error")
     percent = (processed / total * 100.0) if total > 0 else 0.0
-    return jsonify({
-        "job_id": job_id,
-        "processed": processed,
-        "total": total,
-        "percent": round(percent, 2),
-        "done": done,
-        "error": error,
-    })
+    return JobStatus(
+        job_id=job_id,
+        processed=processed,
+        total=total,
+        percent=round(percent, 2),
+        done=done,
+        error=error
+    )
 
 
-@ui_bp.get("/api/jobs/<job_id>/progress")
-def api_progress(job_id: str):
+@router.get("/api/jobs/{job_id}/progress", response_model=JobProgress)
+async def api_progress(job_id: str):
     """Return job progress JSON for API clients."""
     persisted = _load_state(job_id)
     if not persisted:
         time.sleep(0.05)
         persisted = _load_state(job_id)
         if not persisted:
-            return jsonify({
-                "processed": 0,
-                "total": 0,
-                "done": False,
-                "error": None,
-                "notFound": True,
-            }), 200
+            return JobProgress(
+                processed=0,
+                total=0,
+                done=False,
+                error=None,
+                not_found=True
+            )
 
-    return jsonify({
-        "processed": int(persisted.get("processed", 0)),
-        "total": int(persisted.get("total", 0)),
-        "done": bool(persisted.get("done", False)),
-        "error": persisted.get("error"),
-    })
+    return JobProgress(
+        processed=int(persisted.get("processed", 0)),
+        total=int(persisted.get("total", 0)),
+        done=bool(persisted.get("done", False)),
+        error=persisted.get("error")
+    )
 
 
-@ui_bp.get("/api/jobs/<job_id>/results")
-def api_results(job_id: str):
+@router.get("/api/jobs/{job_id}/results", response_model=JobResults)
+async def api_results(request: Request, job_id: str, page: int = 1, page_size: int = 25):
     """Return paginated events as JSON with media URLs for the given job id."""
     state = JOBS.get(job_id) or _load_state(job_id)
     if not state:
-        return jsonify({"error": "invalid_job"}), 404
+        raise HTTPException(status_code=404, detail="invalid_job")
     if state.get("error"):
-        return jsonify({"error": state["error"]}), 500
+        raise HTTPException(status_code=500, detail=state["error"])
 
     events = state.get("events") or []
     trip_id = state.get("trip_id") or ""
@@ -689,14 +712,7 @@ def api_results(job_id: str):
         except Exception:
             events = []
 
-    try:
-        page = max(1, int(request.args.get("page", 1)))
-    except Exception:
-        page = 1
-    try:
-        page_size = int(request.args.get("page_size", 25))
-    except Exception:
-        page_size = 25
+    page = max(1, page)
     page_size = max(1, min(100, page_size))
 
     total = len(events)
@@ -707,8 +723,8 @@ def api_results(job_id: str):
     end = min(start + page_size, total)
     paged_events = events[start:end]
 
-    base = request.host_url.rstrip("/")
-    media_prefix = f"{base}/api/jobs/{job_id}/media"
+    base_url = str(request.base_url).rstrip("/")
+    media_prefix = f"{base_url}/api/jobs/{job_id}/media"
     events_with_urls = []
     for e in paged_events:
         try:
@@ -727,21 +743,21 @@ def api_results(job_id: str):
             e_copy["activityClipUrl"] = f"{media_prefix}/{clip}"
         events_with_urls.append(e_copy)
 
-    return jsonify({
-        "job_id": job_id,
-        "trip_id": trip_id,
-        "events": events_with_urls,
-        "page": page,
-        "page_size": page_size,
-        "total": total,
-        "start": start,
-        "end": end,
-        "total_pages": total_pages,
-    })
+    return JobResults(
+        job_id=job_id,
+        trip_id=trip_id,
+        events=events_with_urls,
+        page=page,
+        page_size=page_size,
+        total=total,
+        start=start,
+        end=end,
+        total_pages=total_pages
+    )
 
 
-@ui_bp.get("/api/jobs/<job_id>/media/<path:filename>")
-def api_media(job_id: str, filename: str):
+@router.get("/api/jobs/{job_id}/media/{filename:path}")
+async def api_media(request: Request, job_id: str, filename: str):
     """Serve media file for the given job id via API."""
-    return media(job_id, filename)
+    return await media(request, job_id, filename)
 

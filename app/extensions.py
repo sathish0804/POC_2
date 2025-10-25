@@ -1,10 +1,11 @@
-from flask import Flask
+from fastapi import FastAPI
 from app.utils.logging_utils import configure_logging
 
 
-def init_extensions(app: Flask) -> None:
+def init_extensions(app: FastAPI) -> None:
     # Support overriding log path via environment or app config
-    log_path = app.config.get("LOG_PATH")
-    configure_logging(log_path=log_path, verbose=bool(app.config.get("DEBUG", False)))
+    log_path = getattr(app, 'config', {}).get("LOG_PATH")
+    debug = getattr(app, 'debug', False)
+    configure_logging(log_path=log_path, verbose=debug)
 
 

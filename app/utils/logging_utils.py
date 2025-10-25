@@ -28,7 +28,7 @@ def configure_logging(log_path: Optional[str] = None, verbose: bool = False) -> 
     """
     Configure unified logging across all modules.
 
-    - Routes Python stdlib logging (e.g., Flask, Gunicorn, libraries) to Loguru
+    - Routes Python stdlib logging (e.g., FastAPI, Gunicorn, libraries) to Loguru
     - Writes human-readable console logs and rotates a file log
     - Defaults to output/app.log; override with LOG_PATH env var or argument
     - Rotation: 10 MB, Retention: 7 days

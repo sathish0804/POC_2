@@ -21,7 +21,7 @@ class TestingConfig(BaseConfig):
 
 
 def get_config(name: str | None):
-    env = (name or os.getenv("FLASK_ENV", "production")).lower()
+    env = (name or os.getenv("FASTAPI_ENV", "production")).lower()
     return {"development": DevelopmentConfig, "testing": TestingConfig}.get(env, ProductionConfig)
 
 
