@@ -4,6 +4,7 @@ import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor
 from typing import Optional
 from loguru import logger
+from app.config import settings
 
 _POOL: Optional[ProcessPoolExecutor] = None
 
@@ -11,13 +12,13 @@ _POOL: Optional[ProcessPoolExecutor] = None
 def _init_worker() -> None:
     try:
         import torch
-        torch.set_num_threads(int(os.getenv("TORCH_NUM_THREADS", "1")))
-        torch.set_num_interop_threads(int(os.getenv("TORCH_NUM_INTEROP_THREADS", "1")))
+        torch.set_num_threads(int(settings.torch_num_threads))
+        torch.set_num_interop_threads(int(settings.torch_num_interop_threads))
     except Exception:
         pass
     try:
         import cv2
-        cv2.setNumThreads(int(os.getenv("OPENCV_NUM_THREADS", "1")))
+        cv2.setNumThreads(int(settings.opencv_num_threads))
         try:
             cv2.ocl.setUseOpenCL(False)
         except Exception:
@@ -30,7 +31,7 @@ def _init_worker() -> None:
     except Exception:
         pass
     try:
-        weights = os.getenv("YOLO_WEIGHTS_PRELOAD", "").strip()
+        weights = (settings.yolo_weights_preload or "").strip()
         if weights:
             from app.services.model_cache import preload_models
             preload_models(weights_path=weights)
@@ -44,10 +45,7 @@ def get_pool(max_workers: Optional[int] = None) -> ProcessPoolExecutor:
     if _POOL is not None:
         return _POOL
     if max_workers is None:
-        try:
-            env = int(os.getenv("POOL_PROCS", "6"))
-        except Exception:
-            env = 6
+        env = int(settings.pool_procs or 6)
         cpu = (mp.cpu_count() or 1)
         max_workers = max(1, min(env, cpu))
     ctx = mp.get_context("spawn")

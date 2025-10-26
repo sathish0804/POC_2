@@ -13,14 +13,15 @@ Python system to detect loco pilot activities from CCTV, running fully on CPU. I
 - Output is a list of `ActivityEvent` records with timestamps, evidence, and media references.
 
 ## Architecture
-- Flask Web App:
-  - Blueprints:
-    - `health` (`/health/`): health probe.
-    - `ui`:
-      - HTML UI: `GET /`, `POST /start`, `GET /job/<id>`, `GET /results/<id>`, `GET /media/<id>/<path>`.
-      - JSON API: `POST /api/jobs`, `GET /api/jobs/<id>`, `GET /api/jobs/<id>/progress`, `GET /api/jobs/<id>/results`, `GET /api/jobs/<id>/media/<path>`.
-  - CORS headers added post-request; JSON error handlers for `/api/*`.
-  - Logging via Loguru with rotation to `output/app.log`.
+- FastAPI (ASGI) JSON API:
+  - Endpoints:
+    - `GET /health`: health probe.
+    - `POST /api/jobs` (multipart: `tripId`, `cvvrFile`).
+    - `GET /api/jobs/<id>`
+    - `GET /api/jobs/<id>/progress`
+    - `GET /api/jobs/<id>/results`
+    - `GET /api/jobs/<id>/media/<path>` (supports HTTP Range)
+  - CORS via middleware; logging via Loguru (`output/app.log`).
 - Processing Model:
   - Background job per upload:
     - Video saved to temp dir, a thread orchestrates parallel processing across a shared `ProcessPoolExecutor`.
@@ -74,31 +75,57 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r /Users/satishvanga/Documents/Vanga/POC_2/requirements.txt
 ```
 
-## Run (Web UI + API)
-- Dev server:
+## Run (API)
+- Uvicorn:
 ```bash
-python /Users/satishvanga/Documents/Vanga/POC_2/run.py
-# opens on http://localhost:5000
+uvicorn asgi:app --host 0.0.0.0 --port 8000 --workers 1
+# Health
+curl -s http://localhost:8000/health
 ```
-- Health:
+- Gunicorn (Uvicorn workers):
 ```bash
-curl -s http://localhost:5000/health/
+gunicorn asgi:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --workers 1 --timeout 600
 ```
-- UI:
-  - Visit `http://localhost:5000/` to upload a video and view progress/results.
-- API:
+- API usage:
 ```bash
 # create job via multipart
-curl -s -X POST http://localhost:5000/api/jobs \
+curl -s -X POST http://localhost:8000/api/jobs \
   -F tripId=DEMO-TRIP-001 \
-  -F cvvrFile=@/Users/satishvanga/Documents/Vanga/POC_2/example_data/video_cfr.mp4
+  -F cvvrFile=@/Users/satishvanga/Documents/Vanga/POC_2/example_data/Cabin\ 10\ min\ VIdeo.mp4
 
 # get job status
-curl -s http://localhost:5000/api/jobs/<job_id>
+curl -s http://localhost:8000/api/jobs/<job_id>
 
 # stream media (supports Range for MP4)
-curl -I http://localhost:5000/api/jobs/<job_id>/media/<relative_path_from_asset_root>
+curl -I http://localhost:8000/api/jobs/<job_id>/media/<relative_path_from_asset_root>
 ```
+
+## FastAPI (ASGI) – High-performance API
+
+This repo also includes a FastAPI app that mirrors the JSON API endpoints for faster, concurrent uploads and responses, while the HTML UI remains in Flask for now.
+
+Run with Uvicorn:
+```bash
+uvicorn asgi:app --host 0.0.0.0 --port 8000 --workers 1
+# Health check
+curl -s http://localhost:8000/health
+```
+
+Run with Gunicorn + Uvicorn workers:
+```bash
+gunicorn asgi:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --workers 1 --timeout 600
+```
+
+Endpoints (same as Flask JSON API):
+- POST `/api/jobs` (multipart: `tripId`, `cvvrFile`)
+- GET `/api/jobs/{job_id}`
+- GET `/api/jobs/{job_id}/progress`
+- GET `/api/jobs/{job_id}/results`
+- GET `/api/jobs/{job_id}/media/{path}` (supports HTTP Range for MP4)
+
+Notes:
+- Set `APP_ENV=development` for verbose logging. If omitted, defaults to production settings.
+- Set `FRONTEND_ORIGIN=https://your-ui.example` to restrict CORS; defaults to `*` in development.
 
 ## Run (CLI, optional)
 If you have a separate entry like `main.py`, you can still run ad-hoc processing. For parallel IO benchmarks:
@@ -126,7 +153,7 @@ python /Users/satishvanga/Documents/Vanga/POC_2/run.py multiproc --video /path/t
 - Log file at `/Users/satishvanga/Documents/Vanga/POC_2/output/app.log`.
 
 ## Tech Stack
-- Flask 3 for web/API; Loguru for logging.
+- FastAPI + Starlette (ASGI) for API; Loguru for logging.
 - Ultralytics YOLOv8 (CPU), MediaPipe Face/Hands/Pose.
 - EasyOCR/Tesseract (optional) for surface/text gating.
 - OpenCV for IO, preprocessing, overlays, and clips.

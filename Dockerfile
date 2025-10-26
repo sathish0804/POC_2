@@ -45,6 +45,6 @@ COPY . .
 # Serve with Gunicorn
 EXPOSE 8000
 
-CMD ["gunicorn", "-c", "gunicorn.conf.py", "wsgi:app"]
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "asgi:app", "-k", "uvicorn.workers.UvicornWorker"]
 
 

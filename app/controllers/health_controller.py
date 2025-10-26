@@ -1,16 +1,11 @@
-from flask import Blueprint, jsonify
-from loguru import logger
+from fastapi import APIRouter
 
 
-health_bp = Blueprint("health", __name__)
+router = APIRouter()
 
 
-@health_bp.get("/")
-def health():
-    return jsonify({"status": "ok"}), 200
-
-
-# Module import log
-logger.debug(f"[{__name__}] module loaded")
+@router.get("/health")
+async def health() -> dict[str, str]:
+    return {"status": "ok"}
 
 

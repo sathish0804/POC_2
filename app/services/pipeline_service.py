@@ -12,6 +12,7 @@ from app.services.model_cache import (
     get_ocr_utils,
 )
 from app.utils.video_utils import sample_video_frames, get_video_duration_str, get_video_filename, get_expected_sampled_frames, get_expected_sampled_frames_in_range
+from app.config import settings
 from app.utils.geometry import iou
 from app.utils.phone_logic import infer_phone_usage_from_landmarks
 from app.utils.annotate import annotate_and_save
@@ -153,8 +154,8 @@ class ActivityPipeline:
 
     def _apply_roi_masks(self, frame_bgr: np.ndarray) -> np.ndarray:
         H, W = frame_bgr.shape[:2]
-        include_s = os.getenv("ROI_INCLUDE_POLY", "").strip()
-        exclude_s = os.getenv("ROI_EXCLUDE_POLY", "").strip()
+        include_s = (settings.roi_include_poly or "").strip()
+        exclude_s = (settings.roi_exclude_poly or "").strip()
         if not include_s and not exclude_s:
             return frame_bgr
         mask = np.ones((H, W), dtype=np.uint8) * 255
@@ -181,7 +182,7 @@ class ActivityPipeline:
             except Exception:
                 pass
         try:
-            g = float(os.getenv("PREPROC_GAMMA", str(self.preproc_gamma)))
+            g = float(os.getenv("PREPROC_GAMMA", str(settings.preproc_gamma if settings.preproc_gamma is not None else self.preproc_gamma)))
         except Exception:
             g = self.preproc_gamma
         if g and abs(g - 1.0) > 1e-3:
@@ -200,11 +201,11 @@ class ActivityPipeline:
         if not hasattr(self, "_bg") or self._bg is None or self._bg.shape != gray.shape:
             self._bg = gray.astype(np.float32)
         try:
-            alpha = float(os.getenv("BG_ALPHA", str(self.bg_alpha)))
+            alpha = float(os.getenv("BG_ALPHA", str(settings.bg_alpha if settings.bg_alpha is not None else self.bg_alpha)))
         except Exception:
             alpha = self.bg_alpha
         try:
-            thr = int(os.getenv("BG_THRESH", str(self.bg_thresh)))
+            thr = int(os.getenv("BG_THRESH", str(settings.bg_thresh if settings.bg_thresh is not None else self.bg_thresh)))
         except Exception:
             thr = self.bg_thresh
         cv2.accumulateWeighted(gray, self._bg, max(0.0, min(1.0, alpha)))
@@ -247,8 +248,8 @@ class ActivityPipeline:
         # Allow adjusting YOLO confidence via env var for quick sweeps (optional)
         try:
             import os as _os
-            _yolo_conf = float(_os.getenv("YOLO_CONF", "0.25"))
-            _yolo_iou = float(_os.getenv("YOLO_IOU", "0.45"))
+            _yolo_conf = float(_os.getenv("YOLO_CONF", str(settings.yolo_conf if settings.yolo_conf is not None else 0.25)))
+            _yolo_iou = float(_os.getenv("YOLO_IOU", str(settings.yolo_iou if settings.yolo_iou is not None else 0.45)))
         except Exception:
             _yolo_conf, _yolo_iou = 0.25, 0.45
         yolo = get_yolo_service(self.yolo_weights, conf=_yolo_conf, iou=_yolo_iou)
@@ -1039,8 +1040,8 @@ class ActivityPipeline:
             logger.debug("[Pipeline:Range] Initializing services (YOLO, MediaPipe, OCR)...")
         try:
             import os as _os
-            _yolo_conf = float(_os.getenv("YOLO_CONF", "0.25"))
-            _yolo_iou = float(_os.getenv("YOLO_IOU", "0.45"))
+            _yolo_conf = float(_os.getenv("YOLO_CONF", str(settings.yolo_conf if settings.yolo_conf is not None else 0.25)))
+            _yolo_iou = float(_os.getenv("YOLO_IOU", str(settings.yolo_iou if settings.yolo_iou is not None else 0.45)))
         except Exception:
             _yolo_conf, _yolo_iou = 0.25, 0.45
         yolo = get_yolo_service(self.yolo_weights, conf=_yolo_conf, iou=_yolo_iou)
@@ -1120,7 +1121,7 @@ class ActivityPipeline:
         # Micro-batching: accumulate sampled frames and run YOLO in batches
         yolo_bs = getattr(self, "yolo_batch", 1)
         try:
-            env_bs = os.getenv("YOLO_BATCH", "").strip()
+            env_bs = (os.getenv("YOLO_BATCH") or (str(settings.yolo_batch) if settings.yolo_batch else "")).strip()
             if env_bs:
                 yolo_bs = max(1, int(float(env_bs)))
         except Exception:

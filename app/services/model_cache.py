@@ -5,6 +5,7 @@ from app.services.yolo_service import YoloService
 from app.services.mediapipe_service import MediaPipeService
 from app.services.antenna_refiner import AntennaRefiner
 from app.utils.ocr_utils import OcrUtils
+from app.config import settings
 
 _lock = threading.Lock()
 _yolo_cache: Dict[Tuple[str, float, float], YoloService] = {}
@@ -65,9 +66,7 @@ def preload_models(weights_path: str) -> None:
     except Exception:
         pass
     try:
-        # Only preload OCR if env requests it; otherwise lazy-load
-        import os
-        if os.getenv("PRELOAD_OCR", "0").strip() in ("1", "true", "True"):
+        if bool(settings.preload_ocr):
             get_ocr_utils(True)
     except Exception:
         pass

@@ -3,12 +3,20 @@ set -euo pipefail
 
 SERVER="103.195.244.67"
 USER="root"
-PASS='Login@123@@@'
+# Optional: provide SSH password via SSH_PASS env; otherwise key-based auth is used
+PASS="${SSH_PASS:-}"
 APP_DIR="/opt/poc2"
 
-# Package and stream code to remote (avoid temp file and macOS tar attrs)
-tar czf - --exclude '.git' --exclude '__pycache__' --exclude 'output' -C "$(pwd)" . \
-  | sshpass -p "$PASS" ssh -o StrictHostKeyChecking=no ${USER}@${SERVER} "mkdir -p ${APP_DIR} && tar xzf - -C ${APP_DIR}"
+# Package and stream backend (poc_2/) to remote (avoid temp file and macOS tar attrs)
+if [ -n "$PASS" ]; then
+  COPYFILE_DISABLE=1 tar --format=ustar --no-xattrs --no-acls --no-fflags --no-mac-metadata -czf - \
+    --exclude '.git' --exclude '__pycache__' --exclude 'output' --exclude '.DS_Store' -C "$(pwd)/poc_2" . \
+    | sshpass -p "$PASS" ssh -o StrictHostKeyChecking=no ${USER}@${SERVER} "mkdir -p ${APP_DIR} && tar --no-same-owner -xzf - -C ${APP_DIR}"
+else
+  COPYFILE_DISABLE=1 tar --format=ustar --no-xattrs --no-acls --no-fflags --no-mac-metadata -czf - \
+    --exclude '.git' --exclude '__pycache__' --exclude 'output' --exclude '.DS_Store' -C "$(pwd)/poc_2" . \
+    | ssh -o StrictHostKeyChecking=no ${USER}@${SERVER} "mkdir -p ${APP_DIR} && tar --no-same-owner -xzf - -C ${APP_DIR}"
+fi
 
 sshpass -p "$PASS" ssh -o StrictHostKeyChecking=no ${USER}@${SERVER} bash -s <<'REMOTE_EOF'
 set -euo pipefail
@@ -73,7 +81,7 @@ POOL_PROCS=$( (command -v nproc >/dev/null 2>&1 && nproc) || (getconf _NPROCESSO
 # Systemd unit (values templated)
 cat >/etc/systemd/system/poc2.service <<UNIT
 [Unit]
-Description=POC_2 Gunicorn Service
+Description=POC_2 FastAPI Service
 After=network.target
 
 [Service]
@@ -81,7 +89,10 @@ Type=simple
 User=root
 WorkingDirectory=/opt/poc2
 Environment=PYTHONUNBUFFERED=1
-Environment=FLASK_ENV=production
+Environment=ENVIRONMENT=production
+Environment=LOG_DIR=/opt/poc2/output
+Environment=FRONTEND_ORIGIN=*
+Environment=VIDEO_INPUT_DIR=/opt/poc2/example_data
 Environment=CUDA_VISIBLE_DEVICES=
 Environment=OMP_NUM_THREADS=1
 Environment=OPENBLAS_NUM_THREADS=1
@@ -95,7 +106,7 @@ Environment=POOL_PROCS=12
 Environment=CHUNK_SECONDS=6
 Environment=YOLO_BATCH=3
 Environment=SAVE_DEBUG_OVERLAYS=0
-ExecStart=/opt/poc2/venv/bin/gunicorn -c gunicorn.conf.py wsgi:app
+ExecStart=/opt/poc2/venv/bin/gunicorn -c gunicorn.conf.py asgi:app -k uvicorn.workers.UvicornWorker
 Restart=always
 RestartSec=5
 
