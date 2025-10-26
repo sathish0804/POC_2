@@ -10,11 +10,11 @@ APP_DIR="/opt/poc2"
 # Package and stream backend (poc_2/) to remote (avoid temp file and macOS tar attrs)
 if [ -n "$PASS" ]; then
   COPYFILE_DISABLE=1 tar --format=ustar --no-xattrs --no-acls --no-fflags --no-mac-metadata -czf - \
-    --exclude '.git' --exclude '__pycache__' --exclude 'output' --exclude '.DS_Store' -C "$(pwd)/poc_2" . \
+    --exclude '.git' --exclude '__pycache__' --exclude 'output' --exclude '.DS_Store' -C "$(pwd)" . \
     | sshpass -p "$PASS" ssh -o StrictHostKeyChecking=no ${USER}@${SERVER} "mkdir -p ${APP_DIR} && tar --no-same-owner -xzf - -C ${APP_DIR}"
 else
   COPYFILE_DISABLE=1 tar --format=ustar --no-xattrs --no-acls --no-fflags --no-mac-metadata -czf - \
-    --exclude '.git' --exclude '__pycache__' --exclude 'output' --exclude '.DS_Store' -C "$(pwd)/poc_2" . \
+    --exclude '.git' --exclude '__pycache__' --exclude 'output' --exclude '.DS_Store' -C "$(pwd)" . \
     | ssh -o StrictHostKeyChecking=no ${USER}@${SERVER} "mkdir -p ${APP_DIR} && tar --no-same-owner -xzf - -C ${APP_DIR}"
 fi
 
