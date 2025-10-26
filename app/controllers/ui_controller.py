@@ -6,7 +6,8 @@ import tempfile
 import uuid
 import threading
 from typing import Dict, Any, List, Tuple
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response, current_app
+from werkzeug.utils import secure_filename
 import mimetypes
 from loguru import logger
 import json
@@ -367,28 +368,62 @@ def _run_job(jid: str) -> None:
 
 @ui_bp.get("/")
 def index():
-    """Render the landing page to upload a CVVR file and Trip ID."""
+    """Render the landing page with options to Upload or Select a video."""
     return render_template("index.html")
 
 
-@ui_bp.post("/start")
-def start():
-    """Create a processing job for the uploaded video and start a background worker."""
-    trip_id = request.form.get("tripId", "").strip()
-    file = request.files.get("cvvrFile")
+@ui_bp.get("/select")
+def select():
+    """Render the page to select a server video and Trip ID."""
+    base_dir = current_app.config.get("VIDEO_INPUT_DIR")
+    allowed_exts = {".mp4", ".mov", ".mkv", ".avi"}
+    videos = []
+    try:
+        if base_dir and os.path.isdir(base_dir):
+            videos = sorted(
+                f for f in os.listdir(base_dir)
+                if os.path.splitext(f)[1].lower() in allowed_exts
+            )
+    except Exception:
+        videos = []
+    return render_template("select.html", videos=videos)
 
+
+@ui_bp.route("/upload", methods=["GET", "POST"])
+def upload():
+    """Render upload page (GET) or save an uploaded video (POST)."""
+    if request.method == "GET":
+        return render_template("upload.html")
+
+    trip_id = request.form.get("tripId", "").strip()
     if not trip_id:
         flash("tripId is required", "error")
-        return redirect(url_for("ui.index"))
+        return redirect(url_for("ui.upload"))
+
+    file = request.files.get("cvvrFile")
     if file is None or not getattr(file, "filename", None):
         flash("cvvrFile is required", "error")
-        return redirect(url_for("ui.index"))
+        return redirect(url_for("ui.upload"))
 
+    allowed_exts = {".mp4", ".mov", ".mkv", ".avi"}
+    orig_name = file.filename
+    ext = os.path.splitext(orig_name)[1].lower()
+    if ext not in allowed_exts:
+        flash("Unsupported video type (allowed: mp4, mov, mkv, avi)", "error")
+        return redirect(url_for("ui.upload"))
+
+    # Save to a temporary job directory and process immediately (do not persist in VIDEO_INPUT_DIR)
     tmp_dir = tempfile.mkdtemp(prefix="upload_")
-    suffix = os.path.splitext(file.filename)[1] or ".mp4"
-    video_path = os.path.join(tmp_dir, f"input{suffix}")
-    file.save(video_path)
-    logger.info(f"[Flask] Uploaded video saved to {video_path}")
+    suffix = ext or ".mp4"
+    safe_base = secure_filename(os.path.splitext(orig_name)[0]) or "input"
+    video_path = os.path.join(tmp_dir, f"{safe_base}{suffix}")
+    try:
+        file.save(video_path)
+        logger.info(f"[Flask] Uploaded video saved to temp path {video_path}")
+    except Exception as e:
+        logger.exception(f"[Flask] upload save failed: {e}")
+        flash("Upload failed", "error")
+        return redirect(url_for("ui.upload"))
 
     job_id = uuid.uuid4().hex
     JOBS[job_id] = {
@@ -403,11 +438,73 @@ def start():
         "asset_root": None,
     }
     try:
-        # Prefill total for immediate UI feedback
         pref_total = int(get_expected_sampled_frames(video_path, float(os.getenv("SAMPLE_FPS", "0.5"))))
-        logger.info(f"[Flask] start: pref_total={pref_total}")
         if pref_total <= 0:
             dur = _ffprobe_duration_seconds(video_path)
+            pref_total = int(math.ceil(dur)) if dur > 0 else 0
+        JOBS[job_id]["total"] = max(0, pref_total)
+    except Exception:
+        JOBS[job_id]["total"] = 0
+    _persist_state(job_id, JOBS[job_id])
+
+    t = threading.Thread(target=_run_job, args=(job_id,), daemon=False)
+    t.start()
+    logger.info(f"[Flask] Started background job thread for {job_id}, ident={t.ident}")
+    return redirect(url_for("ui.job", job_id=job_id))
+
+
+@ui_bp.post("/start")
+def start():
+    """Create a processing job for a server-resident video and start a background worker."""
+    trip_id = request.form.get("tripId", "").strip()
+    video_name = request.form.get("videoName", "").strip()
+
+    if not trip_id:
+        flash("tripId is required", "error")
+        return redirect(url_for("ui.index"))
+    if not video_name:
+        flash("Please select a video", "error")
+        return redirect(url_for("ui.index"))
+
+    base_dir = str(current_app.config.get("VIDEO_INPUT_DIR") or "").strip()
+    if not base_dir or not os.path.isdir(base_dir):
+        flash("VIDEO_INPUT_DIR is not configured or does not exist", "error")
+        return redirect(url_for("ui.index"))
+
+    allowed_exts = {".mp4", ".mov", ".mkv", ".avi"}
+    if os.path.splitext(video_name)[1].lower() not in allowed_exts:
+        flash("Unsupported video type", "error")
+        return redirect(url_for("ui.index"))
+
+    full_path = os.path.realpath(os.path.join(base_dir, video_name))
+    base_real = os.path.realpath(base_dir)
+    if not full_path.startswith(base_real + os.sep):
+        flash("Invalid video selection", "error")
+        return redirect(url_for("ui.index"))
+    if not os.path.isfile(full_path):
+        flash("Selected video not found", "error")
+        return redirect(url_for("ui.index"))
+
+    tmp_dir = tempfile.mkdtemp(prefix="job_")
+    logger.info(f"[Flask] Selected server video at {full_path}")
+
+    job_id = uuid.uuid4().hex
+    JOBS[job_id] = {
+        "trip_id": trip_id,
+        "tmp_dir": tmp_dir,
+        "video_path": full_path,
+        "processed": 0,
+        "total": 0,
+        "done": False,
+        "error": None,
+        "events": None,
+        "asset_root": None,
+    }
+    try:
+        pref_total = int(get_expected_sampled_frames(full_path, float(os.getenv("SAMPLE_FPS", "0.5"))))
+        logger.info(f"[Flask] start: pref_total={pref_total}")
+        if pref_total <= 0:
+            dur = _ffprobe_duration_seconds(full_path)
             pref_total = int(math.ceil(dur)) if dur > 0 else 0
         JOBS[job_id]["total"] = max(0, pref_total)
     except Exception:

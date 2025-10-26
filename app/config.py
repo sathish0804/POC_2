@@ -6,7 +6,7 @@ class BaseConfig:
     SECRET_KEY = os.getenv("SECRET_KEY", "change-me")
     JSON_SORT_KEYS = False
     MAX_CONTENT_LENGTH = 1024 * 1024 * 1024
-
+    VIDEO_INPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "example_data"))
 
 class DevelopmentConfig(BaseConfig):
     DEBUG = True
@@ -27,5 +27,4 @@ def get_config(name: str | None):
 
 # Module import log
 logger.debug(f"[{__name__}] module loaded")
-
 
