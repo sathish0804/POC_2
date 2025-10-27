@@ -1,13 +1,13 @@
 API Contract (External UI)
 
 Base URL
-- Local: http://localhost:8000
 - Server: http://103.195.244.67:8000/
 
 CORS
-- Allowed Origin: set via env `FRONTEND_ORIGIN` (default `*` in development)
+- Allowed Origin: set via env `FRONTEND_ORIGIN` (default `*`; supports comma-separated list)
 - Methods: GET, POST, OPTIONS
-- Headers: Content-Type, Authorization, Range
+- Headers: * (all headers; includes `Range`)
+- Expose Headers: Content-Range, Accept-Ranges
 
 Health
 - GET /health
@@ -19,12 +19,16 @@ Create Job (upload)
   - Fields:
     - tripId: string (required)
     - cvvrFile: file (mp4/mov/mkv/avi, required)
-  - 201 Created
+  - 200 OK
   - Response:
     - job_id: string
     - status_url: string
     - progress_url: string
     - results_url: string
+  - Errors:
+    - 400 { "detail": "tripId is required" }
+    - 400 { "detail": "cvvrFile is required" }
+    - 500 { "detail": string }
 
 List Server Videos
 - GET /api/jobs/server-videos
@@ -41,6 +45,11 @@ Create Job (server file)
   - 200 OK
   - Response:
     - job_id: string
+  - Errors:
+    - 400 { "detail": "VIDEO_INPUT_DIR is not configured or does not exist" }
+    - 400 { "detail": "Unsupported video type" }
+    - 400 { "detail": "Invalid video selection" }
+    - 404 { "detail": "Selected video not found" }
 
 Get Job Summary
 - GET /api/jobs/{job_id}
@@ -72,34 +81,56 @@ Fetch Results (paginated)
     - events: array of objects
       - activityImage: string | null      (relative filename)
       - activityClip: string | null       (relative filename)
+      - activityImageUrl: string | null   (absolute URL to image)
+      - activityClipUrl: string | null    (absolute URL to mp4; streamable)
     - page: number
     - page_size: number
     - total: number
     - start: number
     - end: number
     - total_pages: number
+  - Errors:
+    - 404 { "detail": "invalid_job" }
+    - 500 { "detail": string }
 
-Errors (JSON)
-- 400 { "error": "bad_request", "message": string }
-- 404 { "error": "not_found", "path": string } (for /api/* only)
-- 413 { "error": "payload_too_large" }
-- 500 { "error": "internal_server_error" } (for /api/* only)
+Fetch Media (images and clips)
+- GET /api/jobs/{job_id}/media/{filename}
+  - Description: Serves images and mp4 clips generated for a job.
+  - Requests:
+    - Headers (optional): Range: bytes={start}-{end} (mp4 partial requests)
+  - Responses:
+    - 200 OK (full content)
+    - 206 Partial Content (mp4 with Range)
+      - Headers: Accept-Ranges: bytes, Content-Range: "bytes {start}-{end}/{size}", Content-Length
+    - 404 { "detail": "not_found" | "no_assets" | "file_missing" }
+  - Notes:
+    - MIME detection is automatic; mp4 served as video/mp4.
+
+Errors
+- Error responses use FastAPI default shape: { "detail": string }
+- Common statuses:
+  - 400: bad request (e.g., missing fields, invalid selection)
+  - 404: not found (e.g., invalid_job, file_missing)
+  - 500: internal_server_error or job error message
 
 Examples
 ```bash
-curl -X POST http://localhost:8000/api/jobs \
+curl -X POST http://103.195.244.67:8000/api/jobs \
   -F tripId=TRIP-001 \
   -F cvvrFile=@/path/to/video.mp4
 
-curl http://localhost:8000/api/jobs/{job_id}
+curl http://103.195.244.67:8000/api/jobs/{job_id}
 
-curl http://localhost:8000/api/jobs/{job_id}/progress
+curl http://103.195.244.67:8000/api/jobs/{job_id}/progress
 
-curl "http://localhost:8000/api/jobs/{job_id}/results?page=1&page_size=25"
+curl "http://103.195.244.67:8000/api/jobs/{job_id}/results?page=1&page_size=25"
 
 # server-side flow
-curl http://localhost:8000/api/jobs/server-videos
-curl -X POST http://localhost:8000/api/jobs/start -d "tripId=TRIP-001&videoName=Cabin 27 min Video.mp4"
+curl http://103.195.244.67:8000/api/jobs/server-videos
+curl -X POST http://103.195.244.67:8000/api/jobs/start -d "tripId=TRIP-001&videoName=Cabin 27 min Video.mp4"
+
+# media (range request for mp4)
+curl -i -H "Range: bytes=0-1023" http://103.195.244.67:8000/api/jobs/{job_id}/media/path/to/file.mp4
 ```
 
 

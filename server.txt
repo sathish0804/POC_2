@@ -9,8 +9,8 @@ systemctl restart poc2
 SSH_PASS='Login@123@@@' /Users/satishvanga/Documents/Vanga/POC_2/deploy_local.sh
 
 
-cd /Users/satishvanga/Documents/Vanga/POC_UI && SERVER=103.195.244.67 REMOTE_USER=root SSH_PASS='Login@123@@@' APP_DIR=/opt/poc2-ui NGINX=1 ./deploy_ui.sh
-
+cd /Users/satishvanga/Documents/Vanga/POC_UI
+SERVER=103.195.244.67 REMOTE_USER=root SSH_PASS='Login@123@@@' APP_DIR=/opt/poc2-ui API_BASE_URL="http://103.195.244.67:8000" ./deploy_ui.sh
 
 sshpass -p 'Login@123@@@' ssh root@103.195.244.67 "journalctl -u poc2-ui -f --no-pager"
 

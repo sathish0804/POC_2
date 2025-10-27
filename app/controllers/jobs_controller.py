@@ -4,7 +4,6 @@ import os
 import tempfile
 import uuid
 from typing import Any, Dict, List
-
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
 from loguru import logger
 
@@ -82,9 +81,11 @@ async def create_job(request: Request, tripId: str = Form(...), cvvrFile: Upload
 
 @router.get("/server-videos")
 async def list_server_videos() -> Dict[str, Any]:
+    logger.info(f"[API] Listing server videos from {settings.video_input_dir}")
     base_dir = (settings.video_input_dir ).strip()
     allowed_exts = {".mp4", ".mov", ".mkv", ".avi"}
     videos: list[str] = []
+    logger.info(f"[API] Found {len(videos)} videos in {base_dir}")
     try:
         if base_dir and os.path.isdir(base_dir):
             videos = sorted(
@@ -93,6 +94,7 @@ async def list_server_videos() -> Dict[str, Any]:
             )
     except Exception:
         videos = []
+    logger.info(f"[API] Returning {len(videos)} videos")
     return {"videos": videos}
 
 

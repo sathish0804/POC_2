@@ -1,13 +1,5 @@
 from __future__ import annotations
-
-import os
-import json
-import tempfile
-import uuid
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Response
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
@@ -18,12 +10,7 @@ from app.controllers.health_controller import router as health_router
 from app.controllers.jobs_controller import router as jobs_router
 
 
-def _get_cors_origin() -> str:
-    origin = os.getenv("FRONTEND_ORIGIN", "*")
-    return origin
-
-
-def create_app(config_name: Optional[str] = None) -> FastAPI:
+def create_app() -> FastAPI:
     app = FastAPI()
 
     # Configure logging
@@ -38,16 +25,13 @@ def create_app(config_name: Optional[str] = None) -> FastAPI:
         pass
 
     # CORS
-    origin = settings.frontend_origin or "*"
     app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[origin] if origin != "*" else ["*"],
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["*"],
-        expose_headers=["Content-Range", "Accept-Ranges"],
-    )
-
+    CORSMiddleware,
+    allow_origins=settings.frontend_origin,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
     # Routers
     api_router.include_router(health_router)
     api_router.include_router(jobs_router)
@@ -58,6 +42,6 @@ def create_app(config_name: Optional[str] = None) -> FastAPI:
 
 
 # ASGI application default (development)
-app = create_app(os.getenv("APP_ENV", None))
+app = create_app()
 
 

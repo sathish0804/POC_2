@@ -4,7 +4,7 @@ set -euo pipefail
 SERVER="103.195.244.67"
 USER="root"
 # Optional: provide SSH password via SSH_PASS env; otherwise key-based auth is used
-PASS="${SSH_PASS:-}"
+PASS="Login@123@@@"
 APP_DIR="/opt/poc2"
 
 # Package and stream backend (poc_2/) to remote (avoid temp file and macOS tar attrs)
