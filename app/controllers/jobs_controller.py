@@ -26,28 +26,65 @@ async def create_job(request: Request, tripId: str = Form(...), cvvrFile: Upload
         tmp_dir = tempfile.mkdtemp(prefix="upload_")
         suffix = os.path.splitext(cvvrFile.filename or "")[1] or ".mp4"
         video_path = os.path.join(tmp_dir, f"input{suffix}")
-        contents = await cvvrFile.read()
+        
+        # Stream the file in chunks instead of loading it all into memory
+        CHUNK_SIZE = 1024 * 1024  # 1MB chunks
+        total_size = 0
+        
+        # Create job ID early for upload progress tracking
+        job_id = uuid.uuid4().hex
+        JOBS[job_id] = {
+            "trip_id": trip_id,
+            "tmp_dir": tmp_dir,
+            "video_path": video_path,
+            "processed": 0,
+            "total": 0,
+            "upload_progress": 0,  # Track upload progress
+            "upload_total": 0,     # Total upload size (if known)
+            "done": False,
+            "error": None,
+            "events": None,
+            "asset_root": None,
+        }
+        persist_state(job_id, JOBS[job_id])
+        
+        # Try to get content length if available
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                JOBS[job_id]["upload_total"] = int(content_length)
+            except (ValueError, TypeError):
+                pass
+        
         with open(video_path, "wb") as f:
-            f.write(contents)
-        logger.info(f"[API] Uploaded video saved to {video_path}")
+            while True:
+                chunk = await cvvrFile.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                f.write(chunk)
+                total_size += len(chunk)
+                
+                # Update upload progress
+                JOBS[job_id]["upload_progress"] = total_size
+                # Only persist state occasionally to avoid excessive I/O
+                if total_size % (10 * CHUNK_SIZE) == 0:  # Every 10MB
+                    persist_state(job_id, JOBS[job_id])
+                
+        logger.info(f"[API] Uploaded video saved to {video_path} (size: {total_size / (1024 * 1024):.2f} MB)")
+        
+        # Mark upload as complete
+        JOBS[job_id]["upload_progress"] = total_size
     finally:
         try:
             await cvvrFile.close()
         except Exception:
             pass
 
-    job_id = uuid.uuid4().hex
-    JOBS[job_id] = {
-        "trip_id": trip_id,
-        "tmp_dir": tmp_dir,
-        "video_path": video_path,
-        "processed": 0,
-        "total": 0,
-        "done": False,
-        "error": None,
-        "events": None,
-        "asset_root": None,
-    }
+    # Job ID already created during upload
+    # Just update with any additional fields if needed
+    JOBS[job_id].update({
+        "upload_complete": True  # Mark upload as fully complete
+    })
 
     try:
         from app.utils.video_utils import get_expected_sampled_frames
@@ -185,11 +222,29 @@ async def progress(job_id: str) -> Dict[str, Any]:
         persisted = load_state(job_id)
         if not persisted:
             return {"processed": 0, "total": 0, "done": False, "error": None, "notFound": True}
+    
+    # For upload progress, check in-memory state as it's not persisted
+    state = JOBS.get(job_id, {})
+    upload_progress = int(state.get("upload_progress", 0))
+    upload_total = int(state.get("upload_total", 0))
+    upload_complete = bool(state.get("upload_complete", False))
+    
+    # Calculate upload percentage if we have a total
+    upload_percent = 0
+    if upload_total > 0 and upload_progress > 0:
+        upload_percent = min(100, round((upload_progress / upload_total) * 100, 1))
+    elif upload_complete:
+        upload_percent = 100
+    
     return {
         "processed": int(persisted.get("processed", 0)),
         "total": int(persisted.get("total", 0)),
         "done": bool(persisted.get("done", False)),
         "error": persisted.get("error"),
+        "upload_progress": upload_progress,
+        "upload_total": upload_total,
+        "upload_complete": upload_complete,
+        "upload_percent": upload_percent,
     }
 
 
