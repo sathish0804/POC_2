@@ -12,27 +12,30 @@ from app.config import settings
 
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
-
+logger.info(f"[API] Jobs controller initialized")
 
 @router.post("")
 async def create_job(request: Request, tripId: str = Form(...), cvvrFile: UploadFile = File(...)) -> Dict[str, Any]:
+    logger.info(f"[API] Creating job")
     trip_id = (tripId or "").strip()
+    logger.info(f"[API] Trip ID: {trip_id}")
     if not trip_id:
         raise HTTPException(status_code=400, detail="tripId is required")
     if (cvvrFile is None) or (not getattr(cvvrFile, "filename", None)):
         raise HTTPException(status_code=400, detail="cvvrFile is required")
-
+    logger.info(f"[API] CVVR file: {cvvrFile.filename}")
     try:
         tmp_dir = tempfile.mkdtemp(prefix="upload_")
         suffix = os.path.splitext(cvvrFile.filename or "")[1] or ".mp4"
         video_path = os.path.join(tmp_dir, f"input{suffix}")
-        
+        logger.info(f"[API] Video path: {video_path}")
         # Stream the file in chunks instead of loading it all into memory
         CHUNK_SIZE = 1024 * 1024  # 1MB chunks
         total_size = 0
-        
+        logger.info(f"[API] Chunk size: {CHUNK_SIZE}")
         # Create job ID early for upload progress tracking
         job_id = uuid.uuid4().hex
+        logger.info(f"[API] Job ID: {job_id}")
         JOBS[job_id] = {
             "trip_id": trip_id,
             "tmp_dir": tmp_dir,
@@ -46,14 +49,17 @@ async def create_job(request: Request, tripId: str = Form(...), cvvrFile: Upload
             "events": None,
             "asset_root": None,
         }
+        logger.info(f"[API] Job state: {JOBS[job_id]}")
         persist_state(job_id, JOBS[job_id])
         
         # Try to get content length if available
         content_length = request.headers.get("content-length")
+        logger.info(f"[API] Content length: {content_length}")
         if content_length:
             try:
                 JOBS[job_id]["upload_total"] = int(content_length)
             except (ValueError, TypeError):
+                logger.info(f"[API] Content length error: {Exception}")
                 pass
         
         with open(video_path, "wb") as f:
@@ -63,17 +69,20 @@ async def create_job(request: Request, tripId: str = Form(...), cvvrFile: Upload
                     break
                 f.write(chunk)
                 total_size += len(chunk)
-                
+                logger.info(f"[API] Total size: {total_size}")
                 # Update upload progress
                 JOBS[job_id]["upload_progress"] = total_size
+                logger.info(f"[API] Upload progress: {JOBS[job_id]['upload_progress']}")
                 # Only persist state occasionally to avoid excessive I/O
                 if total_size % (10 * CHUNK_SIZE) == 0:  # Every 10MB
+                    logger.info(f"[API] Persisting state")
                     persist_state(job_id, JOBS[job_id])
-                
+                logger.info(f"[API] Persisted state")
         logger.info(f"[API] Uploaded video saved to {video_path} (size: {total_size / (1024 * 1024):.2f} MB)")
         
         # Mark upload as complete
         JOBS[job_id]["upload_progress"] = total_size
+        logger.info(f"[API] Upload progress: {JOBS[job_id]['upload_progress']}")
     finally:
         try:
             await cvvrFile.close()
@@ -82,10 +91,11 @@ async def create_job(request: Request, tripId: str = Form(...), cvvrFile: Upload
 
     # Job ID already created during upload
     # Just update with any additional fields if needed
+    logger.info(f"[API] Updating job state")
     JOBS[job_id].update({
         "upload_complete": True  # Mark upload as fully complete
     })
-
+    logger.info(f"[API] Job state updated: {JOBS[job_id]}")
     try:
         from app.utils.video_utils import get_expected_sampled_frames
         pref_total = int(get_expected_sampled_frames(video_path, float(settings.sample_fps or 0.5)))
@@ -93,36 +103,44 @@ async def create_job(request: Request, tripId: str = Form(...), cvvrFile: Upload
             dur = ffprobe_duration_seconds(video_path)
             pref_total = int(dur) if dur > 0 else 0
     except Exception:
+        logger.info(f"[API] Pref total error: {Exception}")
         dur = ffprobe_duration_seconds(video_path)
         pref_total = int(dur) if dur > 0 else 0
     JOBS[job_id]["total"] = max(0, pref_total)
+    logger.info(f"[API] Pref total: {pref_total}")
+    logger.info(f"[API] Persisting state")
     persist_state(job_id, JOBS[job_id])
+    logger.info(f"[API] State persisted")
 
     import threading
     t = threading.Thread(target=run_job, args=(job_id,), daemon=False)
     t.start()
     logger.info(f"[API] Started background job thread for {job_id}, ident={t.ident}")
+    logger.info(f"[API] Thread started")
 
     try:
         host_url = str(request.url).split(request.url.path)[0]
     except Exception:
         host_url = str(request.base_url).rstrip("/")
-
+    logger.info(f"[API] Host URL: {host_url}")
     return {
         "job_id": job_id,
         "status_url": f"{host_url}/api/jobs/{job_id}",
         "progress_url": f"{host_url}/api/jobs/{job_id}/progress",
         "results_url": f"{host_url}/api/jobs/{job_id}/results",
     }
+    logger.info(f"[API] Returning job URL: {host_url}/api/jobs/{job_id}")
 
 
 @router.get("/server-videos")
 async def list_server_videos() -> Dict[str, Any]:
     logger.info(f"[API] Listing server videos from {settings.video_input_dir}")
+    logger.info(f"[API] Base directory: {base_dir}")
     base_dir = (settings.video_input_dir ).strip()
     allowed_exts = {".mp4", ".mov", ".mkv", ".avi"}
     videos: list[str] = []
     logger.info(f"[API] Found {len(videos)} videos in {base_dir}")
+    logger.info(f"[API] Videos: {videos}")
     try:
         if base_dir and os.path.isdir(base_dir):
             videos = sorted(
@@ -130,8 +148,10 @@ async def list_server_videos() -> Dict[str, Any]:
                 if os.path.splitext(f)[1].lower() in allowed_exts
             )
     except Exception:
+        logger.info(f"[API] Videos error: {Exception}")
         videos = []
     logger.info(f"[API] Returning {len(videos)} videos")
+    logger.info(f"[API] Videos: {videos}")
     return {"videos": videos}
 
 

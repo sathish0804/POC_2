@@ -43,6 +43,16 @@ class Settings(BaseSettings):
     yolo_iou: float = Field(default=0.45, env="YOLO_IOU")
     yolo_batch: int = Field(default=1, env="YOLO_BATCH")
 
+    # Optimization flags
+    enable_mediapipe_gate: bool = Field(default=True, env="ENABLE_MEDIAPIPE_GATE")
+    downscale_for_inference: bool = Field(default=True, env="DOWNSCALE_FOR_INFERENCE")
+    inference_max_side: int = Field(default=960, env="INFERENCE_MAX_SIDE")
+    motion_gate_enable: bool = Field(default=True, env="MOTION_GATE_ENABLE")
+    motion_gate_thresh: float = Field(default=0.006, env="MOTION_GATE_THRESH")  # fraction of changed pixels
+    motion_gate_pixel_diff: int = Field(default=12, env="MOTION_GATE_PIXEL_DIFF")  # diff threshold (0-255)
+    clip_enable: bool = Field(default=True, env="CLIP_ENABLE")
+    clip_top_n: int = Field(default=0, env="CLIP_TOP_N")  # 0 = unlimited
+
     roi_include_poly: str = Field(default="", env="ROI_INCLUDE_POLY")
     roi_exclude_poly: str = Field(default="", env="ROI_EXCLUDE_POLY")
     preproc_gamma: float = Field(default=0.9, env="PREPROC_GAMMA")

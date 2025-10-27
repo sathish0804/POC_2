@@ -320,6 +320,7 @@ class ActivityPipeline:
             end_frame__ = int(total_native_frames__) if total_native_frames__ and total_native_frames__ > 0 else int(1e12)
             return self.process_video_range(video_path, 0, end_frame__, progress_cb)
 
+        last_gray_for_motion = None
         for index, ts, frame_bgr in sample_video_frames(video_path, self.sample_fps):
             if self.max_frames and processed >= self.max_frames:
                 if self.verbose:
@@ -330,10 +331,60 @@ class ActivityPipeline:
 
             # RAW vs preprocessed split: YOLO on preproc, MediaPipe on RAW
             frame_bgr_raw = frame_bgr
+            # Motion gate (skip heavy compute on low-motion frames)
+            if bool(settings.motion_gate_enable):
+                try:
+                    gray = cv2.cvtColor(frame_bgr_raw, cv2.COLOR_BGR2GRAY)
+                    if last_gray_for_motion is not None:
+                        diff = cv2.absdiff(gray, last_gray_for_motion)
+                        pix = (diff > int(settings.motion_gate_pixel_diff)).sum()
+                        frac = float(pix) / float(max(1, diff.size))
+                        if frac < float(settings.motion_gate_thresh):
+                            processed += 1
+                            if callable(progress_cb):
+                                try:
+                                    progress_cb({"processed": processed, "total": expected_total})
+                                except Exception:
+                                    pass
+                            last_gray_for_motion = gray
+                            continue
+                    last_gray_for_motion = gray
+                except Exception:
+                    pass
+
             frame_bgr_yolo = self._preprocess_for_yolo(frame_bgr_raw)
-            detections = yolo.detect(frame_bgr_yolo)
+            # Optional downscale for YOLO inference
+            yolo_in = frame_bgr_yolo
+            sx, sy = 1.0, 1.0
+            try:
+                if bool(settings.downscale_for_inference):
+                    H0, W0 = frame_bgr_yolo.shape[:2]
+                    max_side = max(H0, W0)
+                    target = int(settings.inference_max_side or 960)
+                    if max_side > target and target > 0:
+                        scale = float(target) / float(max_side)
+                        W1 = max(1, int(W0 * scale))
+                        H1 = max(1, int(H0 * scale))
+                        yolo_in = cv2.resize(frame_bgr_yolo, (W1, H1), interpolation=cv2.INTER_AREA)
+                        sx = float(W0) / float(W1)
+                        sy = float(H0) / float(H1)
+            except Exception:
+                yolo_in = frame_bgr_yolo
+                sx, sy = 1.0, 1.0
+
+            detections_raw = yolo.detect(yolo_in)
+            # Rescale detections back to original coordinate space
+            detections = []
+            try:
+                for (cid, score, box) in detections_raw:
+                    x1, y1, x2, y2 = box
+                    detections.append((cid, score, (x1 * sx, y1 * sy, x2 * sx, y2 * sy)))
+            except Exception:
+                detections = detections_raw
+
+            # Only run MediaPipe if enabled or if persons exist when gated
             frame_rgb_raw = cv2.cvtColor(frame_bgr_raw, cv2.COLOR_BGR2RGB)
-            mp_out = mp_service.process(frame_rgb_raw)
+            mp_out = None
             green_flags = detect_green_flags(frame_bgr_raw)
             window_regions = detect_window_regions(frame_bgr_raw)
             if ocr is not None:
@@ -365,13 +416,21 @@ class ActivityPipeline:
                 if all(iou(b, kept[2]) < self.person_nms_iou for kept in persons):
                     persons.append(det)
 
+            if (not bool(settings.enable_mediapipe_gate)) or persons:
+                try:
+                    mp_out = mp_service.process(frame_rgb_raw)
+                except Exception:
+                    mp_out = None
+            else:
+                mp_out = None
+
             face_res = None
             hands_res = None
             pose_res = None
             try:
-                face_res = mp_out.get('face')
-                hands_res = mp_out.get('hands')
-                pose_res = mp_out.get('pose')
+                face_res = mp_out.get('face') if mp_out else None
+                hands_res = mp_out.get('hands') if mp_out else None
+                pose_res = mp_out.get('pose') if mp_out else None
             except Exception:
                 face_res = hands_res = pose_res = None
 
@@ -973,11 +1032,12 @@ class ActivityPipeline:
                     except Exception:
                         pass
                 clip_filename = None
-                try:
-                    out_dir = os.path.join(os.path.dirname(video_path), "output")
-                    clip_filename = extract_clip(video_path, float(ts), out_dir, tag_base, duration_s=4.0)
-                except Exception:
-                    clip_filename = None
+                if bool(settings.clip_enable):
+                    try:
+                        out_dir = os.path.join(os.path.dirname(video_path), "output")
+                        clip_filename = extract_clip(video_path, float(ts), out_dir, tag_base, duration_s=4.0)
+                    except Exception:
+                        clip_filename = None
 
                 # Resolve start/end times: prefer tracker-provided values if present
                 _ev_start = act.get("event_start_ts")
