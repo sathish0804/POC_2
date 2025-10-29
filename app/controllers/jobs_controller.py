@@ -3,7 +3,8 @@ from __future__ import annotations
 import os
 import tempfile
 import uuid
-from typing import Any, Dict, List
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
 from loguru import logger
 
@@ -248,8 +249,158 @@ async def progress(job_id: str) -> Dict[str, Any]:
     }
 
 
+def _transform_seconds_to_iso_time(seconds_str: str, base_date: Optional[str] = None, base_time: Optional[str] = None) -> str:
+    """Convert seconds timestamp to ISO format datetime string."""
+    try:
+        base_dt = None
+        
+        # Try to parse base date and time if available
+        if base_date and base_time:
+            try:
+                # Try common date formats
+                date_formats = [
+                    "%Y-%m-%d %H:%M:%S",
+                    "%d-%m-%Y %H:%M:%S",
+                    "%Y/%m/%d %H:%M:%S",
+                    "%d/%m/%Y %H:%M:%S",
+                ]
+                for fmt in date_formats:
+                    try:
+                        base_dt = datetime.strptime(f"{base_date} {base_time}", fmt)
+                        break
+                    except ValueError:
+                        continue
+            except Exception:
+                pass
+        
+        # If no base datetime, use current time
+        if base_dt is None:
+            base_dt = datetime.now()
+        
+        # Add seconds offset
+        seconds = float(seconds_str)
+        result_dt = base_dt + timedelta(seconds=seconds)
+        return result_dt.strftime("%Y-%m-%dT%H:%M:%S")
+    except Exception:
+        # Fallback: use current time
+        return datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _format_duration(duration_str: str) -> str:
+    """Format duration string to HH:MM:SS format."""
+    try:
+        # Try parsing as HH:MM:SS first
+        if ":" in duration_str:
+            parts = duration_str.split(":")
+            if len(parts) == 3:
+                return duration_str
+        
+        # Try parsing as seconds
+        seconds = float(duration_str)
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    except Exception:
+        # If already formatted or invalid, return as is or default
+        return duration_str if duration_str else "00:00:00"
+
+
+def _event_to_violation(
+    event: Dict[str, Any],
+    trip_id: str,
+    host_url: str,
+    job_id: str
+) -> Dict[str, Any]:
+    """
+    Convert a single event to a violation object.
+    
+    Args:
+        event: Single activity event dictionary
+        trip_id: The trip ID
+        host_url: Base URL for constructing media URLs
+        job_id: Job ID for constructing media URLs
+        
+    Returns:
+        Single violation object matching the required format
+    """
+    # Get object type
+    object_type = event.get("objectType", "")
+    
+    # Get start and end times
+    start_ts = event.get("activityStartTime", "")
+    end_ts = event.get("activityEndTime") or start_ts
+    base_date = event.get("date", "")
+    base_time = event.get("time", "")
+    
+    if start_ts:
+        start_time = _transform_seconds_to_iso_time(
+            str(start_ts),
+            base_date,
+            base_time
+        )
+    else:
+        start_time = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    
+    if end_ts:
+        end_time = _transform_seconds_to_iso_time(
+            str(end_ts),
+            base_date,
+            base_time
+        )
+    else:
+        end_time = start_time
+    
+    # Get description
+    description = event.get("des", "") or "Activity violation detected"
+    
+    # Get activity type
+    activity_type = event.get("activityType", 1)
+    
+    # Get filename
+    filename = event.get("filename", "")
+    if not filename and event.get("fileUrl"):
+        filename = os.path.basename(event.get("fileUrl", ""))
+    
+    # Get file duration
+    file_duration = event.get("fileDuration", "00:00:00")
+    file_duration = _format_duration(file_duration)
+    
+    # Get crew name
+    crew_name = event.get("crewName", "")
+    
+    # Get activity clip URL as fileUrl
+    media_prefix = f"{host_url}/api/jobs/{job_id}/media"
+    file_url = ""
+    clip = event.get("activityClip")
+    if clip:
+        file_url = f"{media_prefix}/{clip}"
+    
+    # Build payload
+    payload = {
+        "tripId": trip_id,
+        "type": activity_type,
+        "startTime": start_time,
+        "endTime": end_time,
+        "remarks": "Violation detected during trip processing",
+        "reason": "Automated detection",
+        "description": description,
+        "objectTypes": object_type,
+        "fileName": filename,
+        "fileDuration": file_duration,
+        "crewName": crew_name,
+        "fileType": 2,  # Default file type (2 = video)
+        "fileUrl": file_url,
+        "createdDate": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+        "createdBy": "system",
+        "status": 1,  # Default status (1 = active/complete)
+    }
+    
+    return payload
+
+
 @router.get("/{job_id}/results")
-async def results(job_id: str, request: Request, page: int = 1, page_size: int = 25) -> Dict[str, Any]:
+async def results(job_id: str, request: Request) -> List[Dict[str, Any]]:
     state = JOBS.get(job_id) or load_state(job_id)
     if not state:
         raise HTTPException(status_code=404, detail="invalid_job")
@@ -268,50 +419,29 @@ async def results(job_id: str, request: Request, page: int = 1, page_size: int =
         except Exception:
             events = []
 
-    page = max(1, int(page or 1))
-    page_size = max(1, min(100, int(page_size or 25)))
-    total = len(events)
-    total_pages = max(1, (total + page_size - 1) // page_size)
-    if page > total_pages:
-        page = total_pages
-    start = (page - 1) * page_size
-    end = min(start + page_size, total)
-    paged_events = events[start:end]
-
     try:
         host_url = str(request.url).split(request.url.path)[0]
     except Exception:
         host_url = str(request.base_url).rstrip("/")
-    media_prefix = f"{host_url}/api/jobs/{job_id}/media"
 
-    events_with_urls: List[Dict[str, Any]] = []
-    for e in paged_events:
-        try:
-            e_copy = dict(e)
-        except Exception:
-            try:
-                e_copy = e.model_dump()
-            except Exception:
-                e_copy = e
-        img = e_copy.get("activityImage")
-        clip = e_copy.get("activityClip")
-        if img:
-            e_copy["activityImageUrl"] = f"{media_prefix}/{img}"
-        if clip:
-            e_copy["activityClipUrl"] = f"{media_prefix}/{clip}"
-        events_with_urls.append(e_copy)
+    # Convert each event to a violation object (one violation per event)
+    if not events:
+        return []
+    
+    violations = []
+    for event in events:
+        violation = _event_to_violation(
+            event=event,
+            trip_id=trip_id,
+            host_url=host_url,
+            job_id=job_id
+        )
+        violations.append(violation)
+    
+    # Sort violations by startTime (earliest first)
+    violations.sort(key=lambda v: v.get("startTime", ""))
 
-    return {
-        "job_id": job_id,
-        "trip_id": trip_id,
-        "events": events_with_urls,
-        "page": page,
-        "page_size": page_size,
-        "total": total,
-        "start": start,
-        "end": end,
-        "total_pages": total_pages,
-    }
+    return violations
 
 
 @router.get("/{job_id}/media/{filename:path}")

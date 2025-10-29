@@ -333,6 +333,27 @@ def run_job(jid: str) -> None:
         except Exception as _e:
             logger.warning(f"[jobs] Failed to write events.json: {_e}")
 
+        # Post results to external API (non-blocking, errors don't fail the job)
+        try:
+            from app.services.external_api_service import post_cvvr_results
+            trip_id = state.get("trip_id") or ""
+            if trip_id and all_events:
+                api_result = post_cvvr_results(
+                    trip_id=trip_id,
+                    events=all_events,
+                    job_id=jid
+                )
+                # Store API result in state for potential debugging
+                state["external_api_result"] = api_result
+                if not api_result.get("success"):
+                    logger.warning(
+                        f"[jobs] External API call failed for job {jid}: {api_result.get('error')}"
+                    )
+        except Exception as api_err:
+            logger.warning(f"[jobs] Failed to post results to external API for job {jid}: {api_err}")
+            # Don't fail the job if external API fails
+            state["external_api_error"] = str(api_err)
+
         elapsed = time.perf_counter() - t0
         state["processed"] = int(completed_expected)
         state["done"] = True

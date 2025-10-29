@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional
 
 from dotenv import load_dotenv
 from loguru import logger
@@ -49,6 +50,11 @@ class Settings(BaseSettings):
     bg_alpha: float = Field(default=0.05, env="BG_ALPHA")
     bg_thresh: int = Field(default=18, env="BG_THRESH")
     preload_ocr: bool = Field(default=False, env="PRELOAD_OCR")
+
+    # External API integration
+    cvvr_api_url: str = "https://api.mindcoinapps.com/ai_demo_api/cvvr/cvvrTripViolations/addUpdateBulk"
+    cvvr_api_token: Optional[str] = Field(default=None, env="CVVR_API_TOKEN")
+    cvvr_api_timeout: int = Field(default=30, env="CVVR_API_TIMEOUT")
 
     class Config:
         env_file = ".env"
