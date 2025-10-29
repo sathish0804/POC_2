@@ -25,13 +25,14 @@ def create_app() -> FastAPI:
         pass
 
     # CORS
+
     app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.frontend_origin,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     # Routers
     api_router.include_router(health_router)
     api_router.include_router(jobs_router)
