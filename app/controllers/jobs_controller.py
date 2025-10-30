@@ -34,6 +34,13 @@ async def create_job(request: Request, tripId: str = Form(...), cvvrFile: Upload
         
         # Create job ID early for upload progress tracking
         job_id = uuid.uuid4().hex
+        
+        # Get host URL for constructing media URLs
+        try:
+            host_url = str(request.url).split(request.url.path)[0]
+        except Exception:
+            host_url = str(request.base_url).rstrip("/")
+        
         JOBS[job_id] = {
             "trip_id": trip_id,
             "tmp_dir": tmp_dir,
@@ -46,6 +53,7 @@ async def create_job(request: Request, tripId: str = Form(...), cvvrFile: Upload
             "error": None,
             "events": None,
             "asset_root": None,
+            "host_url": host_url,  # Store host URL for external API calls
         }
         persist_state(job_id, JOBS[job_id])
         
@@ -104,10 +112,13 @@ async def create_job(request: Request, tripId: str = Form(...), cvvrFile: Upload
     t.start()
     logger.info(f"[API] Started background job thread for {job_id}, ident={t.ident}")
 
-    try:
-        host_url = str(request.url).split(request.url.path)[0]
-    except Exception:
-        host_url = str(request.base_url).rstrip("/")
+    # Get host URL from state (already stored during job creation)
+    host_url = JOBS[job_id].get("host_url", "")
+    if not host_url:
+        try:
+            host_url = str(request.url).split(request.url.path)[0]
+        except Exception:
+            host_url = str(request.base_url).rstrip("/")
 
     return {
         "job_id": job_id,
@@ -137,7 +148,7 @@ async def list_server_videos() -> Dict[str, Any]:
 
 
 @router.post("/start")
-async def start_server_video(tripId: str = Form(...), videoName: str = Form(...)) -> Dict[str, Any]:
+async def start_server_video(request: Request, tripId: str = Form(...), videoName: str = Form(...)) -> Dict[str, Any]:
     trip_id = (tripId or "").strip()
     video_name = (videoName or "").strip()
     if not trip_id:
@@ -163,6 +174,12 @@ async def start_server_video(tripId: str = Form(...), videoName: str = Form(...)
     tmp_dir = tempfile.mkdtemp(prefix="job_")
     logger.info(f"[API] Selected server video at {full_path}")
 
+    # Get host URL for constructing media URLs
+    try:
+        host_url = str(request.url).split(request.url.path)[0]
+    except Exception:
+        host_url = str(request.base_url).rstrip("/")
+
     job_id = uuid.uuid4().hex
     JOBS[job_id] = {
         "trip_id": trip_id,
@@ -174,6 +191,7 @@ async def start_server_video(tripId: str = Form(...), videoName: str = Form(...)
         "error": None,
         "events": None,
         "asset_root": None,
+        "host_url": host_url,  # Store host URL for external API calls
     }
     try:
         from app.utils.video_utils import get_expected_sampled_frames

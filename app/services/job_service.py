@@ -41,6 +41,7 @@ def persist_state(job_id: str, state: Dict[str, Any]) -> None:
                 "error": state.get("error"),
                 "trip_id": state.get("trip_id"),
                 "asset_root": state.get("asset_root"),
+                "host_url": "https://celebxmedia.info",  # Persist host URL for external API calls
             },
             f,
         )
@@ -337,11 +338,13 @@ def run_job(jid: str) -> None:
         try:
             from app.services.external_api_service import post_cvvr_results
             trip_id = state.get("trip_id") or ""
+            host_url = state.get("host_url")  # Get host URL from state
             if trip_id and all_events:
                 api_result = post_cvvr_results(
                     trip_id=trip_id,
                     events=all_events,
-                    job_id=jid
+                    job_id=jid,
+                    host_url=host_url  # Pass host_url to construct fileUrl
                 )
                 # Store API result in state for potential debugging
                 state["external_api_result"] = api_result
