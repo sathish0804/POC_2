@@ -339,7 +339,7 @@ def run_job(jid: str) -> None:
             from app.services.external_api_service import post_cvvr_results
             trip_id = state.get("trip_id") or ""
             host_url = state.get("host_url")  # Get host URL from state
-            if trip_id and all_events:
+            if trip_id:
                 api_result = post_cvvr_results(
                     trip_id=trip_id,
                     events=all_events,

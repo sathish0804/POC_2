@@ -65,6 +65,19 @@ async def create_job(request: Request, tripId: str = Form(...), cvvrFile: Upload
             except (ValueError, TypeError):
                 pass
         
+        # Track upload timing and origin
+        upload_start_time = datetime.now()
+        client_ip = "-"
+        try:
+            client_ip = getattr(getattr(request, "client", None), "host", "-") or "-"
+        except Exception:
+            client_ip = "-"
+        logger.info(
+            f"[API] Upload started job_id={job_id} trip_id={trip_id} filename={cvvrFile.filename} "
+            f"from={client_ip} content_length={JOBS[job_id].get('upload_total', 0)} bytes"
+        )
+        JOBS[job_id]["upload_started_at"] = upload_start_time.isoformat()
+        
         with open(video_path, "wb") as f:
             while True:
                 chunk = await cvvrFile.read(CHUNK_SIZE)
@@ -79,7 +92,17 @@ async def create_job(request: Request, tripId: str = Form(...), cvvrFile: Upload
                 if total_size % (10 * CHUNK_SIZE) == 0:  # Every 10MB
                     persist_state(job_id, JOBS[job_id])
                 
-        logger.info(f"[API] Uploaded video saved to {video_path} (size: {total_size / (1024 * 1024):.2f} MB)")
+        # Compute timing and throughput
+        upload_end_time = datetime.now()
+        elapsed_s = max(0.000001, (upload_end_time - upload_start_time).total_seconds())
+        size_mb = total_size / (1024 * 1024)
+        mb_per_s = size_mb / elapsed_s
+        JOBS[job_id]["upload_completed_at"] = upload_end_time.isoformat()
+        JOBS[job_id]["upload_duration_ms"] = int(elapsed_s * 1000)
+        logger.info(
+            f"[API] Upload completed job_id={job_id} trip_id={trip_id} saved_to={video_path} "
+            f"size_mb={size_mb:.2f} duration_s={elapsed_s:.3f} speed_mib_per_s={mb_per_s:.2f}"
+        )
         
         # Mark upload as complete
         JOBS[job_id]["upload_progress"] = total_size

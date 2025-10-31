@@ -183,13 +183,9 @@ def post_cvvr_results(
     Raises:
         Exception: If the API call fails critically (connection errors, etc.)
     """
-    if not settings.cvvr_api_url:
-        logger.warning(f"[external_api] CVVR_API_URL not configured, skipping POST for trip_id={trip_id}")
-        return {"success": False, "error": "API URL not configured"}
-    
-    if not events:
-        logger.info(f"[external_api] No events to post for trip_id={trip_id}, skipping")
-        return {"success": True, "message": "No events to post"}
+    if not settings.cvvr_api_url and not getattr(settings, "cvvr_api_url_no_events", None):
+        logger.warning(f"[external_api] No CVVR API URLs configured, skipping POST for trip_id={trip_id}")
+        return {"success": False, "error": "API URLs not configured"}
     
     url = settings.cvvr_api_url
     timeout = settings.cvvr_api_timeout or 30
@@ -206,10 +202,6 @@ def post_cvvr_results(
         # headers["X-API-Key"] = settings.cvvr_api_token
     
     # Convert each event to a violation object (one violation per event)
-    if not events:
-        # Return early if no events
-        return {"success": True, "message": "No events to post"}
-    
     violations = []
     for event in events:
         violation = _event_to_violation(
@@ -220,19 +212,105 @@ def post_cvvr_results(
         )
         violations.append(violation)
     
+    # Deduplicate identical violations (same type/object/start/end/file)
+    dedup_map: Dict[tuple, Dict[str, Any]] = {}
+    for v in violations:
+        key = (
+            v.get("type"),
+            v.get("objectTypes"),
+            v.get("startTime"),
+            v.get("endTime"),
+            v.get("fileUrl"),
+        )
+        if key not in dedup_map:
+            dedup_map[key] = v
+    unique_violations: List[Dict[str, Any]] = list(dedup_map.values())
+
+    # If nothing remains after transformation/dedup, post the no-events payload
+    if not unique_violations:
+        url_no_events = getattr(settings, "cvvr_api_url_no_events", None)
+        if not url_no_events:
+            logger.info(f"[external_api] No events to post and NO_EVENTS URL not configured for trip_id={trip_id}, skipping")
+            return {"success": True, "message": "No events to post"}
+
+        timeout = settings.cvvr_api_timeout or 30
+
+        headers = {
+            "Content-Type": "application/json",
+        }
+        if settings.cvvr_api_token:
+            headers["Authorization"] = f"Bearer {settings.cvvr_api_token}"
+
+        payload = {"tripId": trip_id}
+        try:
+            logger.info(
+                f"[external_api] Posting no-events notice to {url_no_events} for trip_id={trip_id} (job_id={job_id})"
+            )
+            response = requests.post(url_no_events, json=payload, headers=headers, timeout=timeout)
+            logger.info(
+                f"[external_api] No-events response status={response.status_code} for trip_id={trip_id} (job_id={job_id})"
+            )
+            try:
+                response_data = response.json()
+            except json.JSONDecodeError:
+                response_data = {"text": response.text}
+
+            if response.status_code in (200, 201):
+                logger.success(
+                    f"[external_api] Successfully posted no-events payload for trip_id={trip_id} (job_id={job_id})"
+                )
+                return {
+                    "success": True,
+                    "status_code": response.status_code,
+                    "response": response_data,
+                }
+            else:
+                logger.warning(
+                    f"[external_api] No-events API returned status {response.status_code} for trip_id={trip_id} (job_id={job_id}): {response_data}"
+                )
+                return {
+                    "success": False,
+                    "status_code": response.status_code,
+                    "error": response_data,
+                }
+        except requests.exceptions.Timeout:
+            logger.error(
+                f"[external_api] Timeout after {timeout}s while posting no-events to {url_no_events} for trip_id={trip_id} (job_id={job_id})"
+            )
+            return {
+                "success": False,
+                "error": f"Request timeout after {timeout}s",
+            }
+        except requests.exceptions.ConnectionError as e:
+            logger.error(
+                f"[external_api] Connection error while posting no-events to {url_no_events} for trip_id={trip_id} (job_id={job_id}): {e}"
+            )
+            return {
+                "success": False,
+                "error": f"Connection error: {str(e)}",
+            }
+        except Exception as e:
+            logger.exception(
+                f"[external_api] Unexpected error while posting no-events to {url_no_events} for trip_id={trip_id} (job_id={job_id}): {e}"
+            )
+            return {
+                "success": False,
+                "error": f"Unexpected error: {str(e)}",
+            }
+
     # Sort violations by startTime (earliest first)
-    violations.sort(key=lambda v: v.get("startTime", ""))
+    unique_violations.sort(key=lambda v: v.get("startTime", ""))
     
     try:
         logger.info(
-            f"[external_api] Posting {len(violations)} violation(s) to {url} "
+            f"[external_api] Posting {len(unique_violations)} violation(s) to {url} "
             f"for trip_id={trip_id} (job_id={job_id})"
         )
         
         # Send payload as array of violation objects
         response = requests.post(
             url,
-            json=violations,
+            json=unique_violations,
             headers=headers,
             timeout=timeout
         )
@@ -252,7 +330,7 @@ def post_cvvr_results(
         # Check if request was successful
         if response.status_code in (200, 201):
             logger.success(
-                f"[external_api] Successfully posted {len(events)} events "
+                f"[external_api] Successfully posted {len(unique_violations)} events "
                 f"for trip_id={trip_id} (job_id={job_id})"
             )
             return {
