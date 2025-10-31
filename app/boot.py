@@ -32,6 +32,13 @@ def _init_worker() -> None:
         pass
     try:
         weights = (settings.yolo_weights_preload or "").strip()
+        # Resolve path inside PyInstaller bundle or repo
+        try:
+            from app.utils.path_utils import resource_path as _res
+            if weights:
+                weights = _res(weights)
+        except Exception:
+            pass
         if weights:
             from app.services.model_cache import preload_models
             preload_models(weights_path=weights)

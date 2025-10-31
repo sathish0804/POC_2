@@ -13,6 +13,7 @@ from loguru import logger
 
 from app.boot import get_pool
 from app.config import settings
+from app.utils.path_utils import resource_path
 
 
 # In-memory job registry; lightweight state is also persisted to disk
@@ -237,7 +238,7 @@ def run_job(jid: str) -> None:
             crew_name="demo",
             crew_id="1",
             crew_role=1,
-            yolo_weights="yolo11s.pt",
+            yolo_weights=resource_path("yolo11s.pt"),
             sample_fps=float(settings.sample_fps or 0.5),
             enable_ocr=False,
             verbose=False,
