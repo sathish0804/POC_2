@@ -289,7 +289,7 @@ class ActivityPipeline:
             recovery_hold_s=self.sleep_cfg_recovery_hold_s,
             open_prob_closed_thresh=self.sleep_cfg_open_prob_closed_thresh,
             head_down_micro_fallback=True,
-            head_down_micro_deg=max(self.sleep_cfg_head_pitch_down_deg, 40.0),
+            head_down_micro_deg=self.sleep_cfg_head_pitch_down_deg,
             ear_high_weird_threshold=0.42,
             no_eye_head_down_deg=self.sleep_cfg_no_eye_head_down_deg,
         )) if self.use_advanced_sleep else None
@@ -333,7 +333,12 @@ class ActivityPipeline:
             frame_bgr_yolo = self._preprocess_for_yolo(frame_bgr_raw)
             detections = yolo.detect(frame_bgr_yolo)
             frame_rgb_raw = cv2.cvtColor(frame_bgr_raw, cv2.COLOR_BGR2RGB)
-            mp_out = mp_service.process(frame_rgb_raw)
+            # Improve MediaPipe robustness under glare/low-light by applying photometric normalization (no ROI/background masks)
+            try:
+                frame_rgb_for_mp = cv2.cvtColor(self._photometric_norm(frame_bgr_raw), cv2.COLOR_BGR2RGB)
+            except Exception:
+                frame_rgb_for_mp = frame_rgb_raw
+            mp_out = mp_service.process(frame_rgb_for_mp)
             green_flags = detect_green_flags(frame_bgr_raw)
             window_regions = detect_window_regions(frame_bgr_raw)
             if ocr is not None:
@@ -671,6 +676,7 @@ class ActivityPipeline:
                     open_prob = None
 
                 head_down_angle = None
+                head_down_angle_signed = None
                 if pose_res and pose_res.pose_landmarks:
                     lm = pose_res.pose_landmarks.landmark
                     try:
@@ -692,8 +698,16 @@ class ActivityPipeline:
                             c = max(-1.0, min(1.0, v1n[0] * v2n[0] + v1n[1] * v2n[1]))
                             return math.degrees(math.acos(c))
                         head_down_angle = ang(head_vec, torso_up)
+                        # Sign by dot product between head_vec and torso_up (down = positive)
+                        try:
+                            dot_raw = (head_vec[0] * torso_up[0]) + (head_vec[1] * torso_up[1])
+                            sign = 1.0 if dot_raw >= 0.0 else -1.0
+                        except Exception:
+                            sign = 1.0
+                        head_down_angle_signed = head_down_angle * sign
                     except Exception:
                         head_down_angle = None
+                        head_down_angle_signed = None
 
                 engaged = any(a.get("person_id") == pid and a.get("object") == "cell phone" for a in per_frame_activities)
 
@@ -720,7 +734,7 @@ class ActivityPipeline:
                         ts=float(ts),
                         ear=ear,
                         open_prob=open_prob,
-                        head_pitch_deg=head_down_angle,
+                        head_pitch_deg=head_down_angle_signed if head_down_angle_signed is not None else head_down_angle,
                         head_point_xy=head_point_xy,
                         engaged=engaged,
                     )
@@ -735,7 +749,8 @@ class ActivityPipeline:
                             if rule == "eye_path":
                                 allow = (conf >= 0.60) and (closed_run >= self.sleep_cfg_eye_closed_run_s)
                             else:
-                                allow = conf >= 0.80
+                                # posture-only micro-sleep: slightly lower gate to be responsive in no-eye scenes
+                                allow = conf >= 0.70
                             if allow:
                                 per_frame_activities.append({
                                     "person_id": pid,
@@ -744,6 +759,8 @@ class ActivityPipeline:
                                     "object_bbox": None,
                                     "holding": False,
                                     "evidence": {"rule": emitted.get("evidence_rule")},
+                                    "event_start_ts": emitted.get("event_start_ts"),
+                                    "event_end_ts": emitted.get("event_end_ts"),
                                     "track_id": track_id,
                                 })
                         else:
@@ -754,6 +771,8 @@ class ActivityPipeline:
                                 "object_bbox": None,
                                 "holding": False,
                                 "evidence": {"rule": emitted.get("evidence_rule")},
+                                "event_start_ts": emitted.get("event_start_ts"),
+                                "event_end_ts": emitted.get("event_end_ts"),
                                 "track_id": track_id,
                             })
                     else:
@@ -795,7 +814,10 @@ class ActivityPipeline:
                     lines = []
                     lines.append(f"EAR: {ear:.3f}" if ear is not None else "EAR: None")
                     lines.append(f"open_prob: {open_prob:.2f}" if open_prob is not None else "open_prob: None")
-                    lines.append(f"head_pitch_deg: {head_down_angle:.1f}" if head_down_angle is not None else "head_pitch_deg: None")
+                    lines.append(
+                        f"head_pitch_deg: { (head_down_angle_signed if head_down_angle_signed is not None else head_down_angle):.1f}"
+                        if (head_down_angle_signed is not None or head_down_angle is not None) else "head_pitch_deg: None"
+                    )
                     tag_base = f"frame_{index:06d}_{ts:.2f}s"
                     try:
                         save_debug_overlay(frame_bgr, lines, tag=tag_base, out_dir=os.path.join(os.path.dirname(video_path), "output"))
@@ -1081,7 +1103,7 @@ class ActivityPipeline:
             recovery_hold_s=self.sleep_cfg_recovery_hold_s,
             open_prob_closed_thresh=self.sleep_cfg_open_prob_closed_thresh,
             head_down_micro_fallback=True,
-            head_down_micro_deg=max(self.sleep_cfg_head_pitch_down_deg, 40.0),
+            head_down_micro_deg=self.sleep_cfg_head_pitch_down_deg,
             ear_high_weird_threshold=0.42,
             no_eye_head_down_deg=self.sleep_cfg_no_eye_head_down_deg,
         )) if self.use_advanced_sleep else None
@@ -1141,7 +1163,11 @@ class ActivityPipeline:
                 frame_bgr_yolo = self._preprocess_for_yolo(frame_bgr_raw)
                 # detections is provided by batching; keep it as-is for YOLO outputs
                 frame_rgb_raw = cv2.cvtColor(frame_bgr_raw, cv2.COLOR_BGR2RGB)
-                mp_out = mp_service.process(frame_rgb_raw)
+                try:
+                    frame_rgb_for_mp = cv2.cvtColor(self._photometric_norm(frame_bgr_raw), cv2.COLOR_BGR2RGB)
+                except Exception:
+                    frame_rgb_for_mp = frame_rgb_raw
+                mp_out = mp_service.process(frame_rgb_for_mp)
                 green_flags = detect_green_flags(frame_bgr_raw)
                 window_regions = detect_window_regions(frame_bgr_raw)
                 if ocr is not None:
@@ -1525,7 +1551,8 @@ class ActivityPipeline:
                                     if rule == "eye_path":
                                         allow = (conf >= 0.60) and (closed_run >= self.sleep_cfg_eye_closed_run_s)
                                     else:
-                                        allow = conf >= 0.80
+                                        # posture-only gate
+                                        allow = conf >= 0.70
                                     if allow:
                                         per_frame_activities.append({
                                             "person_id": pid,
@@ -1534,6 +1561,8 @@ class ActivityPipeline:
                                             "object_bbox": None,
                                             "holding": False,
                                             "evidence": {"rule": emitted.get("evidence_rule")},
+                                            "event_start_ts": emitted.get("event_start_ts"),
+                                            "event_end_ts": emitted.get("event_end_ts"),
                                             "track_id": track_id,
                                         })
                                 else:
@@ -1544,6 +1573,8 @@ class ActivityPipeline:
                                         "object_bbox": None,
                                         "holding": False,
                                         "evidence": {"rule": emitted.get("evidence_rule")},
+                                        "event_start_ts": emitted.get("event_start_ts"),
+                                        "event_end_ts": emitted.get("event_end_ts"),
                                         "track_id": track_id,
                                     })
                             else:

@@ -38,12 +38,13 @@ class SleepDecisionConfigV2:
     ear_high_weird_threshold: float = 0.42
 
     # Movement
-    motion_px_thresh: float = 12.0         # SW displacement magnitude (pixel domain)
+    motion_px_thresh: float = 16.0         # SW displacement magnitude (pixel domain)
     motion_mad_scale: float = 1.4826       # robust MAD scale
 
     # Hysteresis / holds (seconds)
     hold_escalate_s: float = 1.5
     hold_recover_s: float = 3.0
+    posture_micro_hold_s: float = 2.0
 
     # No-eye fallback
     no_eye_pitch_drowsy_deg: float = 28.0
@@ -95,6 +96,7 @@ class SleepDecisionMachineV2:
                 "state_since": None,
                 "esc_hold_start": None,
                 "rec_hold_start": None,
+                "post_micro_start": None,
                 # Baseline
                 "baseline_open": None,
                 "baseline_start_ts": None,
@@ -253,10 +255,9 @@ class SleepDecisionMachineV2:
         if face_quality is not None and face_quality < 0.3:
             eye_rel = False
 
-        # Posture conditions (treat backward pitch like down by using absolute pitch)
-        abs_pitch = abs(pitch_s) if pitch_s is not None else None
-        head_down = (abs_pitch is not None) and (abs_pitch >= self.cfg.head_pitch_down_deg)
-        head_very_down = (abs_pitch is not None) and (abs_pitch >= self.cfg.head_pitch_sleep_deg)
+        # Posture conditions (use signed pitch: positive = head-down, negative = head-back)
+        head_down = (pitch_s is not None) and (pitch_s >= self.cfg.head_pitch_down_deg)
+        head_very_down = (pitch_s is not None) and (pitch_s >= self.cfg.head_pitch_sleep_deg)
 
         still = motion_mag <= self.cfg.motion_px_thresh
 
@@ -286,14 +287,14 @@ class SleepDecisionMachineV2:
             elif 0.0 < st["closed_run_s"] <= self.cfg.blink_max_s:
                 blink_like = True
 
-        # Posture path (no-eye) – use absolute pitch
+        # Posture path (no-eye) – require positive (down) pitch
         microsleep_posture = False
         sleep_posture = False
         if not eye_rel:
             if pitch_s is not None:
-                if abs_pitch is not None and abs_pitch >= self.cfg.no_eye_pitch_sleep_deg and still:
+                if pitch_s >= self.cfg.no_eye_pitch_sleep_deg and still:
                     sleep_posture = True
-                elif abs_pitch is not None and abs_pitch >= self.cfg.no_eye_pitch_drowsy_deg and still:
+                elif pitch_s >= self.cfg.no_eye_pitch_drowsy_deg and still:
                     microsleep_posture = True
 
         # Escalation / recovery logic
@@ -304,16 +305,31 @@ class SleepDecisionMachineV2:
                 st["state_since"] = ts
                 clear_hold("esc_hold_start"); clear_hold("rec_hold_start")
 
-            # Emit microsleep event (eye or posture)
-            if microsleep_eye or microsleep_posture:
+            # Emit microsleep event
+            allow_posture_micro = False
+            if microsleep_posture:
+                # start/require hold for posture-only microsleep
+                start_hold("post_micro_start")
+                if passed("post_micro_start", self.cfg.posture_micro_hold_s):
+                    allow_posture_micro = True
+            else:
+                clear_hold("post_micro_start")
+
+            if microsleep_eye or allow_posture_micro:
                 rule = "eye_path" if microsleep_eye and eye_rel else "posture_path"
                 conf = 0.65
                 if microsleep_eye and perclos_mw >= 0.5: conf += 0.15
                 if head_down: conf += 0.1
                 if not still: conf -= 0.2
                 conf = max(0.1, min(1.0, conf * engaged_factor))
+                # Episode timing
+                if rule == "eye_path":
+                    est_start = max(0.0, ts - float(st.get("closed_run_s", 0.0)))
+                else:
+                    est_start = float(st.get("post_micro_start", ts - self.cfg.posture_micro_hold_s))
                 emit = {"activity": "micro_sleep", "confidence": float(conf), "rule": rule,
-                        "closed_run_s": float(st["closed_run_s"]), "perclos_mw": float(perclos_mw), "ts": ts}
+                        "closed_run_s": float(st["closed_run_s"]), "perclos_mw": float(perclos_mw), "ts": ts,
+                        "event_start_ts": float(est_start), "event_end_ts": float(ts)}
                 # move to drowsy tier after a microsleep alert
                 st["state"] = "drowsy"
                 st["state_since"] = ts
@@ -334,14 +350,14 @@ class SleepDecisionMachineV2:
                     st["state"] = "sleep"
                     st["state_since"] = ts
                     clear_hold("esc_hold_start")
+                    # Save sleep episode metadata; actual emission will occur on recovery with duration
                     rule = "eye_path" if sleep_eye else "posture_path"
                     conf = 0.75 if sleep_eye else 0.7
                     if head_very_down: conf += 0.1
                     if perclos_mw >= 0.9: conf += 0.1
                     if not still: conf -= 0.2
                     conf = max(0.1, min(1.0, conf * engaged_factor))
-                    emit = {"activity": "sleep", "confidence": float(conf), "rule": rule,
-                            "closed_run_s": float(st["closed_run_s"]), "perclos_mw": float(perclos_mw), "ts": ts}
+                    st["sleep_meta"] = {"rule": rule, "confidence": float(conf), "start_ts": float(ts)}
             else:
                 clear_hold("esc_hold_start")
 
@@ -361,23 +377,41 @@ class SleepDecisionMachineV2:
             if recovered:
                 start_hold("rec_hold_start")
                 if passed("rec_hold_start", self.cfg.hold_recover_s):
+                    # Emit sleep episode with duration using saved metadata
+                    meta = st.get("sleep_meta", {})
+                    start_ts = float(meta.get("start_ts", st.get("state_since", ts)))
+                    rule = str(meta.get("rule", "mixed"))
+                    conf = float(meta.get("confidence", 0.7))
+                    emit = {"activity": "sleep", "confidence": conf, "rule": rule,
+                            "closed_run_s": float(st.get("closed_run_s", 0.0)), "perclos_mw": float(perclos_mw), "ts": ts,
+                            "event_start_ts": float(start_ts), "event_end_ts": float(ts)}
                     st["state"] = "awake"
                     st["state_since"] = ts
+                    st["sleep_meta"] = None
                     clear_hold("rec_hold_start")
             else:
                 clear_hold("rec_hold_start")
 
             # Additional microsleep alerts while drowsy (rate-limited via holds)
-            if emit is None and microsleep_eye and still:
-                start_hold("esc_hold_start")
-                if passed("esc_hold_start", self.cfg.hold_escalate_s / 2.0):
-                    conf = 0.6
-                    if head_down: conf += 0.1
-                    if perclos_mw > 0.6: conf += 0.1
-                    conf = max(0.1, min(1.0, conf * engaged_factor))
-                    emit = {"activity": "micro_sleep", "confidence": float(conf), "rule": "eye_path",
-                            "closed_run_s": float(st["closed_run_s"]), "perclos_mw": float(perclos_mw), "ts": ts}
-                    clear_hold("esc_hold_start")
+            if emit is None and still:
+                if microsleep_eye:
+                    start_hold("esc_hold_start")
+                    if passed("esc_hold_start", self.cfg.hold_escalate_s / 2.0):
+                        conf = 0.6
+                        if head_down: conf += 0.1
+                        if perclos_mw > 0.6: conf += 0.1
+                        conf = max(0.1, min(1.0, conf * engaged_factor))
+                        emit = {"activity": "micro_sleep", "confidence": float(conf), "rule": "eye_path",
+                                "closed_run_s": float(st["closed_run_s"]), "perclos_mw": float(perclos_mw), "ts": ts}
+                        clear_hold("esc_hold_start")
+                elif microsleep_posture:
+                    start_hold("post_micro_start")
+                    if passed("post_micro_start", self.cfg.posture_micro_hold_s):
+                        conf = 0.6
+                        if head_down: conf += 0.1
+                        conf = max(0.1, min(1.0, conf * engaged_factor))
+                        emit = {"activity": "micro_sleep", "confidence": float(conf), "rule": "posture_path",
+                                "closed_run_s": float(st["closed_run_s"]), "perclos_mw": float(perclos_mw), "ts": ts}
 
         elif state == "sleep":
             # Recover only with sustained evidence

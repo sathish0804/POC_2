@@ -445,8 +445,8 @@ async def results(job_id: str, request: Request) -> List[Dict[str, Any]]:
     # Convert each event to a violation object (one violation per event)
     if not events:
         return []
-    
-    violations = []
+
+    raw_violations = []
     for event in events:
         violation = _event_to_violation(
             event=event,
@@ -454,8 +454,23 @@ async def results(job_id: str, request: Request) -> List[Dict[str, Any]]:
             host_url=host_url,
             job_id=job_id
         )
-        violations.append(violation)
-    
+        raw_violations.append(violation)
+
+    # Deduplicate identical violations (same type/object/start/end/file)
+    dedup_map: Dict[tuple, Dict[str, Any]] = {}
+    for v in raw_violations:
+        key = (
+            v.get("type"),
+            v.get("objectTypes"),
+            v.get("startTime"),
+            v.get("endTime"),
+            v.get("fileUrl"),
+        )
+        if key not in dedup_map:
+            dedup_map[key] = v
+        # else ignore exact duplicate
+
+    violations = list(dedup_map.values())
     # Sort violations by startTime (earliest first)
     violations.sort(key=lambda v: v.get("startTime", ""))
 

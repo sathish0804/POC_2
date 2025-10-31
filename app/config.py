@@ -53,6 +53,7 @@ class Settings(BaseSettings):
 
     # External API integration
     cvvr_api_url: str = "https://api.mindcoinapps.com/ai_demo_api/cvvr/cvvrTripViolations/addUpdateBulk"
+    cvvr_api_url_no_events: str = "https://api.mindcoinapps.com/cvvr/cvvrTripViolations/addUpdateBulkNoEvents"
     cvvr_api_token: Optional[str] = Field(default=None, env="CVVR_API_TOKEN")
     cvvr_api_timeout: int = Field(default=30, env="CVVR_API_TIMEOUT")
 
