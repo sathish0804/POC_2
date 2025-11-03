@@ -405,8 +405,11 @@ class SleepDecisionMachineV2:
                         if head_down: conf += 0.1
                         if perclos_mw > 0.6: conf += 0.1
                         conf = max(0.1, min(1.0, conf * engaged_factor))
+                        # Include episode timing
+                        est_start = max(0.0, ts - float(st.get("closed_run_s", 0.0)))
                         emit = {"activity": "micro_sleep", "confidence": float(conf), "rule": "eye_path",
-                                "closed_run_s": float(st["closed_run_s"]), "perclos_mw": float(perclos_mw), "ts": ts}
+                                "closed_run_s": float(st["closed_run_s"]), "perclos_mw": float(perclos_mw), "ts": ts,
+                                "event_start_ts": float(est_start), "event_end_ts": float(ts)}
                         clear_hold("esc_hold_start")
                 elif microsleep_posture:
                     start_hold("post_micro_start")
@@ -414,8 +417,11 @@ class SleepDecisionMachineV2:
                         conf = 0.6
                         if head_down: conf += 0.1
                         conf = max(0.1, min(1.0, conf * engaged_factor))
+                        # Use the posture micro hold start as episode start if available
+                        est_start = float(st.get("post_micro_start", ts - self.cfg.posture_micro_hold_s))
                         emit = {"activity": "micro_sleep", "confidence": float(conf), "rule": "posture_path",
-                                "closed_run_s": float(st["closed_run_s"]), "perclos_mw": float(perclos_mw), "ts": ts}
+                                "closed_run_s": float(st["closed_run_s"]), "perclos_mw": float(perclos_mw), "ts": ts,
+                                "event_start_ts": float(est_start), "event_end_ts": float(ts)}
 
         elif state == "sleep":
             # Recover only with sustained evidence

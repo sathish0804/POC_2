@@ -1008,6 +1008,9 @@ class ActivityPipeline:
                 _ev_end = act.get("event_end_ts")
                 _start_ts = float(_ev_start) if _ev_start is not None else float(ts)
                 _end_ts = float(_ev_end) if _ev_end is not None else (float(_start_ts) + 4.0)
+                # Ensure a non-zero event span
+                if _end_ts <= _start_ts:
+                    _end_ts = _start_ts + 4.0
 
                 event = ActivityEvent(
                     tripId=self.trip_id,
@@ -1054,6 +1057,8 @@ class ActivityPipeline:
                 # Map to ActivityEvent directly
                 _start_ts = float(ev.get("event_start_ts", now_ts))
                 _end_ts = float(ev.get("event_end_ts", now_ts))
+                if _end_ts <= _start_ts:
+                    _end_ts = _start_ts + 4.0
                 activity_type, des = self._map_activity_label(str(ev.get("activity", "sleep")))
                 event = ActivityEvent(
                     tripId=self.trip_id,
@@ -1847,6 +1852,8 @@ class ActivityPipeline:
                         _ev_end = act.get("event_end_ts")
                         _start_ts = float(_ev_start) if _ev_start is not None else float(ts)
                         _end_ts = float(_ev_end) if _ev_end is not None else (float(_start_ts) + 4.0)
+                        if _end_ts <= _start_ts:
+                            _end_ts = _start_ts + 4.0
 
                         event = ActivityEvent(
                             tripId=self.trip_id,
@@ -1917,6 +1924,8 @@ class ActivityPipeline:
             for ev in flushed:
                 _start_ts = float(ev.get("event_start_ts", last_ts))
                 _end_ts = float(ev.get("event_end_ts", last_ts))
+                if _end_ts <= _start_ts:
+                    _end_ts = _start_ts + 4.0
                 activity_type, des = self._map_activity_label(str(ev.get("activity", "sleep")))
                 event = ActivityEvent(
                     tripId=self.trip_id,
