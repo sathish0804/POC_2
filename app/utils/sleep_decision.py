@@ -44,11 +44,11 @@ class SleepDecisionConfigV2:
     # Hysteresis / holds (seconds)
     hold_escalate_s: float = 1.5
     hold_recover_s: float = 3.0
-    posture_micro_hold_s: float = 2.0
+    posture_micro_hold_s: float = 3.5
 
     # No-eye fallback
-    no_eye_pitch_drowsy_deg: float = 28.0
-    no_eye_pitch_sleep_deg: float = 40.0
+    no_eye_pitch_drowsy_deg: float = 42.0
+    no_eye_pitch_sleep_deg: float = 45.0
     no_eye_min_still_s: float = 3.0
 
     # Adaptive baseline
@@ -288,19 +288,23 @@ class SleepDecisionMachineV2:
                 blink_like = True
 
         # Posture path (no-eye) – require positive (down) pitch
-        microsleep_posture = False
+        microsleep_posture = False  # redefined: only true at "sleep"-level pitch
         sleep_posture = False
+        posture_drowsy = False
         if not eye_rel:
             if pitch_s is not None:
-                if pitch_s >= self.cfg.no_eye_pitch_sleep_deg and still:
+                if pitch_s >= self.cfg.no_eye_pitch_sleep_deg:
+                    # At very high head-down pitch, consider sleep-posture regardless of minor motion
                     sleep_posture = True
+                    if still:
+                        microsleep_posture = True  # restrict posture-only micro-sleep to stillness
                 elif pitch_s >= self.cfg.no_eye_pitch_drowsy_deg and still:
-                    microsleep_posture = True
+                    posture_drowsy = True
 
         # Escalation / recovery logic
         if state == "awake":
             # Enter drowsy tier silently if mid PERCLOS high, or posture suggests drowsy
-            if perclos_mw >= self.cfg.perclos_drowsy or microsleep_posture:
+            if perclos_mw >= self.cfg.perclos_drowsy or posture_drowsy:
                 st["state"] = "drowsy"
                 st["state_since"] = ts
                 clear_hold("esc_hold_start"); clear_hold("rec_hold_start")
@@ -457,6 +461,35 @@ class SleepDecisionMachineV2:
             "baseline_open": st.get("baseline_open"),
         }
 
+    def finalize(self, now_ts: float) -> list:
+        """Flush any ongoing sleep episodes so callers can emit at end-of-stream.
+
+        Returns a list of event dicts with keys compatible with update() emissions.
+        """
+        out = []
+        for tid, st in list(self._tracks.items()):
+            if st.get("state") == "sleep":
+                meta = st.get("sleep_meta", {}) or {}
+                start_ts = float(meta.get("start_ts", st.get("state_since", now_ts)))
+                rule = str(meta.get("rule", "mixed"))
+                conf = float(meta.get("confidence", 0.7))
+                perclos_mw = SleepDecisionMachineV2._time_weighted_perclos(st.get("closed_hist", deque()), now_ts, self.cfg.mid_window_s)
+                out.append({
+                    "activity": "sleep",
+                    "confidence": conf,
+                    "rule": rule,
+                    "closed_run_s": float(st.get("closed_run_s", 0.0)),
+                    "perclos_mw": float(perclos_mw),
+                    "ts": float(now_ts),
+                    "event_start_ts": float(start_ts),
+                    "event_end_ts": float(now_ts),
+                })
+                # Reset state after flush
+                st["state"] = "awake"
+                st["state_since"] = now_ts
+                st["sleep_meta"] = None
+        return out
+
 # -----------------------------------------------------------------------------
 # Backward-compatible adapter for legacy imports (SleepDecisionMachine, Config)
 # -----------------------------------------------------------------------------
@@ -534,6 +567,9 @@ class SleepDecisionMachine:
 
     def get_debug(self, track_id: int, now_ts: float) -> Dict[str, Any]:
         return self._impl.get_debug(track_id, now_ts)
+
+    def finalize(self, now_ts: float) -> list:
+        return self._impl.finalize(now_ts)
 
 
 # Module import log
