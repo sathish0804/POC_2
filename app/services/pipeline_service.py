@@ -709,7 +709,9 @@ class ActivityPipeline:
                         head_down_angle = None
                         head_down_angle_signed = None
 
-                engaged = any(a.get("person_id") == pid and a.get("object") == "cell phone" for a in per_frame_activities)
+                phone_engaged = any(a.get("person_id") == pid and a.get("object") == "cell phone" for a in per_frame_activities)
+                multi_person_present = len(persons) > 1
+                engaged = bool(phone_engaged or multi_person_present)
 
                 if self.use_advanced_sleep and sleep_decider is not None:
                     nose_xy = None
@@ -749,8 +751,8 @@ class ActivityPipeline:
                             if rule == "eye_path":
                                 allow = (conf >= 0.60) and (closed_run >= self.sleep_cfg_eye_closed_run_s)
                             else:
-                                # posture-only micro-sleep: slightly lower gate to be responsive in no-eye scenes
-                                allow = conf >= 0.70
+                                # posture-only micro-sleep: require higher confidence to avoid social-interaction false-positives
+                                allow = conf >= 0.85
                             if allow:
                                 per_frame_activities.append({
                                     "person_id": pid,
@@ -1006,6 +1008,9 @@ class ActivityPipeline:
                 _ev_end = act.get("event_end_ts")
                 _start_ts = float(_ev_start) if _ev_start is not None else float(ts)
                 _end_ts = float(_ev_end) if _ev_end is not None else (float(_start_ts) + 4.0)
+                # Ensure a non-zero event span
+                if _end_ts <= _start_ts:
+                    _end_ts = _start_ts + 4.0
 
                 event = ActivityEvent(
                     tripId=self.trip_id,
@@ -1037,6 +1042,45 @@ class ActivityPipeline:
                     pass
 
         pending = sleep_tracker.finalize()
+        # Flush advanced sleep episodes if stream ended while still asleep
+        if self.use_advanced_sleep and sleep_decider is not None:
+            try:
+                now_ts = float(ts)  # last frame timestamp
+            except Exception:
+                now_ts = 0.0
+            flushed = []
+            try:
+                flushed = sleep_decider.finalize(now_ts)
+            except Exception:
+                flushed = []
+            for ev in flushed:
+                # Map to ActivityEvent directly
+                _start_ts = float(ev.get("event_start_ts", now_ts))
+                _end_ts = float(ev.get("event_end_ts", now_ts))
+                if _end_ts <= _start_ts:
+                    _end_ts = _start_ts + 4.0
+                activity_type, des = self._map_activity_label(str(ev.get("activity", "sleep")))
+                event = ActivityEvent(
+                    tripId=self.trip_id,
+                    activityType=activity_type,
+                    des=des,
+                    objectType=str(ev.get("activity", "sleep")),
+                    fileUrl=video_path,
+                    fileDuration=file_duration,
+                    activityStartTime=f"{_start_ts:.2f}",
+                    activityEndTime=f"{_end_ts:.2f}",
+                    crewName=self.crew_name,
+                    crewId=self.crew_id,
+                    crewRole=self.crew_role,
+                    date=date_str if 'date_str' in locals() else "",
+                    time=time_str if 'time_str' in locals() else "",
+                    filename=filename,
+                    peopleCount=None,
+                    evidence={"rule": ev.get("rule", "finalize")},
+                    activityImage=None,
+                    activityClip=None,
+                )
+                events.append(event)
         logger.info(f"[Pipeline] Processed {processed} sampled frames from {filename} (sample_fps={self.sample_fps}, duration={file_duration})")
         if callable(progress_cb):
             try:
@@ -1149,8 +1193,11 @@ class ActivityPipeline:
         except Exception:
             pass
 
+        last_ts_seen: float = 0.0
+
         def _process_batch(batch_frames, batch_meta):
             nonlocal processed, sampled_idx
+            nonlocal last_ts_seen
             if not batch_frames:
                 return
             try:
@@ -1168,6 +1215,11 @@ class ActivityPipeline:
                 except Exception:
                     frame_rgb_for_mp = frame_rgb_raw
                 mp_out = mp_service.process(frame_rgb_for_mp)
+                # Track last timestamp for end-of-stream finalize
+                try:
+                    last_ts_seen = float(ts)
+                except Exception:
+                    pass
                 green_flags = detect_green_flags(frame_bgr_raw)
                 window_regions = detect_window_regions(frame_bgr_raw)
                 if ocr is not None:
@@ -1511,7 +1563,9 @@ class ActivityPipeline:
                             except Exception:
                                 head_down_angle = None
 
-                        engaged = any(a.get("person_id") == pid and a.get("object") == "cell phone" for a in per_frame_activities)
+                        phone_engaged = any(a.get("person_id") == pid and a.get("object") == "cell phone" for a in per_frame_activities)
+                        multi_person_present = len(persons) > 1
+                        engaged = bool(phone_engaged or multi_person_present)
 
                         if self.use_advanced_sleep and sleep_decider is not None:
                             nose_xy = None
@@ -1551,8 +1605,8 @@ class ActivityPipeline:
                                     if rule == "eye_path":
                                         allow = (conf >= 0.60) and (closed_run >= self.sleep_cfg_eye_closed_run_s)
                                     else:
-                                        # posture-only gate
-                                        allow = conf >= 0.70
+                                        # posture-only gate (stricter)
+                                        allow = conf >= 0.85
                                     if allow:
                                         per_frame_activities.append({
                                             "person_id": pid,
@@ -1798,6 +1852,8 @@ class ActivityPipeline:
                         _ev_end = act.get("event_end_ts")
                         _start_ts = float(_ev_start) if _ev_start is not None else float(ts)
                         _end_ts = float(_ev_end) if _ev_end is not None else (float(_start_ts) + 4.0)
+                        if _end_ts <= _start_ts:
+                            _end_ts = _start_ts + 4.0
 
                         event = ActivityEvent(
                             tripId=self.trip_id,
@@ -1854,6 +1910,44 @@ class ActivityPipeline:
             cap.release()
 
         pending = sleep_tracker.finalize()
+        # Flush advanced sleep episodes (range path)
+        if self.use_advanced_sleep and sleep_decider is not None:
+            try:
+                last_ts = float(last_ts_seen)
+            except Exception:
+                last_ts = 0.0
+            flushed = []
+            try:
+                flushed = sleep_decider.finalize(last_ts)
+            except Exception:
+                flushed = []
+            for ev in flushed:
+                _start_ts = float(ev.get("event_start_ts", last_ts))
+                _end_ts = float(ev.get("event_end_ts", last_ts))
+                if _end_ts <= _start_ts:
+                    _end_ts = _start_ts + 4.0
+                activity_type, des = self._map_activity_label(str(ev.get("activity", "sleep")))
+                event = ActivityEvent(
+                    tripId=self.trip_id,
+                    activityType=activity_type,
+                    des=des,
+                    objectType=str(ev.get("activity", "sleep")),
+                    fileUrl=video_path,
+                    fileDuration=file_duration,
+                    activityStartTime=f"{_start_ts:.2f}",
+                    activityEndTime=f"{_end_ts:.2f}",
+                    crewName=self.crew_name,
+                    crewId=self.crew_id,
+                    crewRole=self.crew_role,
+                    date=filename and "",  # date/time unknown here
+                    time="",
+                    filename=filename,
+                    peopleCount=None,
+                    evidence={"rule": ev.get("rule", "finalize")},
+                    activityImage=None,
+                    activityClip=None,
+                )
+                events.append(event)
         logger.info(f"[Pipeline:Range] Processed {processed} sampled frames from {filename} in range [{start_frame}, {end_frame})")
         if callable(progress_cb):
             try:
