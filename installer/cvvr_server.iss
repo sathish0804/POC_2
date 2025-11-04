@@ -32,13 +32,13 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 
 [Run]
 ; Add inbound firewall rule for the app (port-agnostic; allows the exe)
-Filename: "{cmd}"; Parameters: "/C netsh advfirewall firewall add rule name=\"CVVR Server\" dir=in action=allow program=\"{app}\\cvvr_server.exe\" enable=yes"; Flags: runhidden
+Filename: "{cmd}"; Parameters: "/C netsh advfirewall firewall add rule name=""CVVR Server"" dir=in action=allow program=""{app}\cvvr_server.exe"" enable=yes"; Flags: runhidden
 ; Offer to launch after install
-Filename: "{app}\\cvvr_server.exe"; Description: "Launch CVVR Server"; Flags: postinstall nowait skipifsilent
+Filename: "{app}\cvvr_server.exe"; Description: "Launch CVVR Server"; Flags: postinstall nowait skipifsilent
 
 [UninstallRun]
 ; Remove the firewall rule on uninstall (ignore failures)
-Filename: "{cmd}"; Parameters: "/C netsh advfirewall firewall delete rule name=\"CVVR Server\""; Flags: runhidden
+Filename: "{cmd}"; Parameters: "/C netsh advfirewall firewall delete rule name=""CVVR Server"""; Flags: runhidden
 
 [Messages]
 FinishedLabel=Setup has finished installing {#SetupSetting("AppName")} on your computer.
