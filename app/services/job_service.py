@@ -245,7 +245,7 @@ def run_job(jid: str) -> None:
             use_advanced_sleep=True,
             sleep_min_duration=10.0,
             sleep_micro_max_min=0.25,
-            save_debug_overlays=1,
+            save_debug_overlays=0,
             sleep_cfg_short_window_s=4.0,
             sleep_cfg_mid_window_s=30.0,
             sleep_cfg_long_window_s=120.0,
