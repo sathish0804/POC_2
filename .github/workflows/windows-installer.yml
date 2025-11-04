@@ -27,10 +27,23 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build exe (PyInstaller)
+      - name: Build exe (PyInstaller one-folder)
         shell: bash
         run: |
-          pyinstaller cvvr_server.spec
+          pyinstaller \
+            --noconfirm \
+            --clean \
+            --name cvvr_server \
+            --onedir \
+            --console \
+            --collect-all mediapipe \
+            --collect-all ultralytics \
+            --collect-all torch \
+            --collect-all torchvision \
+            --collect-binaries cv2 \
+            --add-data "yolo11s.pt;yolo11s.pt" \
+            --add-data "app/static;app/static" \
+            run_server.py
 
       - name: Install Inno Setup
         shell: pwsh

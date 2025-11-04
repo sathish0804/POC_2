@@ -19,7 +19,20 @@ pip install -r requirements.txt
 pip install pyinstaller
 
 Write-Host "[build] Building PyInstaller one-folder executable" -ForegroundColor Cyan
-pyinstaller cvvr_server.spec
+pyinstaller `
+  --noconfirm `
+  --clean `
+  --name cvvr_server `
+  --onedir `
+  --console `
+  --collect-all mediapipe `
+  --collect-all ultralytics `
+  --collect-all torch `
+  --collect-all torchvision `
+  --collect-binaries cv2 `
+  --add-data "yolo11s.pt;yolo11s.pt" `
+  --add-data "app/static;app/static" `
+  run_server.py
 
 $DistDir = Join-Path $RepoRoot 'dist/cvvr_server'
 if (-not (Test-Path $DistDir)) {
