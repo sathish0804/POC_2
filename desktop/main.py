@@ -6,6 +6,15 @@ import multiprocessing as mp
 import faulthandler
 from PySide6.QtWidgets import QApplication, QMessageBox
 
+# Ensure Requests/SSL can verify HTTPS inside the bundled app
+try:
+    import certifi  # type: ignore
+    _cafile = certifi.where()
+    os.environ.setdefault("SSL_CERT_FILE", _cafile)
+    os.environ.setdefault("REQUESTS_CA_BUNDLE", _cafile)
+except Exception:
+    pass
+
 # Ensure project root is on sys.path when running as `python desktop/main.py`
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:

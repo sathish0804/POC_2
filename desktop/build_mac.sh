@@ -13,6 +13,13 @@ pyinstaller \
   --windowed \
   --noconfirm \
   --clean \
+  --collect-all mediapipe \
+  --collect-data mediapipe \
+  --collect-binaries mediapipe \
+  --hidden-import=mediapipe.python._framework_bindings \
+  --hidden-import=_ssl \
+  --hidden-import=_hashlib \
+  --collect-data certifi \
   --add-data=yolo11s.pt:. \
   desktop/main.py
 
