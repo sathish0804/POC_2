@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['desktop/app.py'],
+    ['desktop/main.py'],
     pathex=[],
     binaries=[],
     datas=[('yolo11s.pt', '.')],

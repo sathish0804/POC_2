@@ -1,0 +1,17 @@
+example_data/
+output
+__pycache__
+.venv
+.pytest_cache
+.mypy_cache
+.DS_Store
+.vscode
+.idea
+.env
+.git
+output/
+output/*
+app.log
+ui/*
+dist/*
+build/*
