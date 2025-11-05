@@ -5,7 +5,7 @@ a = Analysis(
     ['desktop/app.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('yolo11s.pt', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

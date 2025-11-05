@@ -34,6 +34,7 @@ jobs:
             --windowed `
             --noconfirm `
             --clean `
+            --add-data "yolo11s.pt;." `
             desktop/app.py
 
       - name: Upload artifact (.exe directory)

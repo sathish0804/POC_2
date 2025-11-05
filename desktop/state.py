@@ -23,9 +23,8 @@ def _config_path() -> str:
 
 @dataclass
 class AppState:
-    # Default server URL so users are not asked at login
-    server_url: str = "http://103.195.244.67:8000"
-    api_token: str = ""
+    results_api_url: str = "https://api.mindcoinapps.com/ai_demo_api/cvvr/cvvrTripViolations/addUpdateBulk"
+    results_api_url_no_events: str = "https://api.mindcoinapps.com/ai_demo_api/cvvr/cvvrTripViolations/addUpdateBulkNoEvents"
 
     @classmethod
     def load(cls) -> "AppState":
@@ -34,8 +33,8 @@ class AppState:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             return cls(
-                server_url=str(data.get("server_url", "") or ""),
-                api_token=str(data.get("api_token", "") or ""),
+                results_api_url=str(data.get("results_api_url", "") or ""),
+                results_api_url_no_events=str(data.get("results_api_url_no_events", "") or ""),
             )
         except Exception:
             return cls()
@@ -45,8 +44,8 @@ class AppState:
         tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({
-                "server_url": self.server_url,
-                "api_token": self.api_token,
+                "results_api_url": self.results_api_url,
+                "results_api_url_no_events": self.results_api_url_no_events,
             }, f, ensure_ascii=False, indent=2)
         os.replace(tmp, path)
 

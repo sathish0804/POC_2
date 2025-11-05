@@ -13,6 +13,7 @@ pyinstaller \
   --windowed \
   --noconfirm \
   --clean \
+  --add-data=yolo11s.pt:. \
   desktop/app.py
 
 echo "Built app in dist/CVVR-Uploader.app"

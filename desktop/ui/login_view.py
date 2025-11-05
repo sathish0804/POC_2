@@ -66,11 +66,6 @@ class LoginWindow(QMainWindow):
         self.save_btn.setEnabled(False)
         try:
             if user == HARD_USER and pwd == HARD_PASS:
-                # Persist default server URL so uploads work without asking
-                st = AppState.load()
-                if not st.server_url:
-                    st.server_url = "http://103.195.244.67:8000"
-                    st.save()
                 self.status_label.setText("Login successful")
                 self.login_success.emit()
             else:

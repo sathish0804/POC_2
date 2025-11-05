@@ -17,30 +17,32 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
-from desktop.api_client import ApiClient
 from desktop.state import AppState
+from desktop.local_pipeline import process_video_locally
+from desktop.results_uploader import post_results
 
 
 class UploadWorker(QObject):
-    progress = Signal(int, int)  # bytes_read, total
-    finished = Signal(dict)
+    progress = Signal(int, int)  # processed, total frames (sampled)
+    finished = Signal(list)
     error = Signal(str)
 
     def __init__(self, trip_id: str, file_path: str) -> None:
         super().__init__()
         self.trip_id = trip_id
         self.file_path = file_path
-        self.client = ApiClient(AppState.load())
 
     @Slot()
     def run(self) -> None:
         try:
-            result = self.client.create_job(
-                trip_id=self.trip_id,
+            events = process_video_locally(
                 video_path=self.file_path,
+                trip_id=self.trip_id,
                 progress_cb=lambda done, total: self.progress.emit(done, total),
+                sample_fps=0.5,
+                verbose=False,
             )
-            self.finished.emit(result)
+            self.finished.emit(events)
         except Exception as e:
             self.error.emit(str(e))
 
@@ -50,7 +52,8 @@ class UploadWindow(QMainWindow):
         super().__init__(parent)
         self.setWindowTitle("CVVR Uploader - Upload")
         self.setFixedSize(640, 420)
-        self._client = ApiClient(AppState.load())
+        # Load state for endpoint reuse
+        self._state = AppState.load()
 
         container = QWidget(self)
         self.setCentralWidget(container)
@@ -70,6 +73,8 @@ class UploadWindow(QMainWindow):
         form.addRow("Video File", self.file_path)
         layout.addWidget(self.browse_btn)
 
+        # Results API is enforced from defaults in AppState; no user input required
+
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         layout.addWidget(self.progress)
@@ -77,7 +82,7 @@ class UploadWindow(QMainWindow):
         self.status_label = QLabel("")
         layout.addWidget(self.status_label)
 
-        self.upload_btn = QPushButton("Start Upload")
+        self.upload_btn = QPushButton("Start Processing")
         self.upload_btn.clicked.connect(self.on_upload)
         layout.addWidget(self.upload_btn)
 
@@ -110,12 +115,14 @@ class UploadWindow(QMainWindow):
         if not os.path.isfile(path):
             QMessageBox.warning(self, "Invalid File", "Selected video file does not exist.")
             return
+        # Results API URL will be taken from state defaults if field is empty
 
-        self.status_label.setText("Uploading...")
+        self.status_label.setText("Processing...")
         self.progress.setValue(0)
         self._set_busy(True)
 
         self._thread = QThread()
+
         self._worker = UploadWorker(trip, path)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
@@ -135,18 +142,38 @@ class UploadWindow(QMainWindow):
         else:
             self.progress.setValue(0)
 
-    @Slot(dict)
-    def on_finished(self, result: dict) -> None:
+    @Slot(list)
+    def on_finished(self, events: list) -> None:
         self._set_busy(False)
-        self.status_label.setText("Upload complete. Job started.")
+        self.status_label.setText("Processing complete. Events generated.")
         try:
-            job_id = result.get("job_id")
-            if job_id:
-                msg = f"Job started successfully.\nJob ID: {job_id}"
-                QMessageBox.information(self, "Success", msg)
+            # Persist results next to the input file
+            out_dir = os.path.join(os.path.dirname(self.file_path.text().strip() or self.file_path.text()), "output")
+            os.makedirs(out_dir, exist_ok=True)
+            out_path = os.path.join(out_dir, "events.json")
+            import json
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(events or [], f, ensure_ascii=False, indent=2)
+            # Post to results endpoint using enforced defaults from AppState
+            url = (self._state.results_api_url or "").strip()
+            no_events = (self._state.results_api_url_no_events or "").strip()
+            token = ""
+            trip = (self.trip_id.text() or "").strip()
+            if not url:
+                QMessageBox.critical(self, "Configuration error", "Results API URL is not configured.")
+            else:
+                resp = post_results(trip_id=trip, events=events or [], endpoint_url=url, token=token, no_events_url=no_events)
+                if resp.get("success"):
+                    if resp.get("no_events"):
+                        QMessageBox.information(self, "Success", f"Saved results to:\n{out_path}\nPosted no-events payload successfully.")
+                    else:
+                        QMessageBox.information(self, "Success", f"Saved results to:\n{out_path}\nPosted {len(events or [])} event(s) to API successfully.")
+                else:
+                    err = resp.get("error") or resp.get("status_code")
+                    QMessageBox.critical(self, "Post failed", f"Saved results to:\n{out_path}\nAPI post failed: {err}")
         except Exception:
             pass
-        # Reset to allow new upload (stay on page)
+        # Reset to allow new processing (stay on page)
         self.file_path.clear()
         self.progress.setValue(0)
 
