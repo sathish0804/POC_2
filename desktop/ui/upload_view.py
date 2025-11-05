@@ -49,6 +49,7 @@ class UploadWindow(QMainWindow):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("CVVR Uploader - Upload")
+        self.setFixedSize(640, 420)
         self._client = ApiClient(AppState.load())
 
         container = QWidget(self)

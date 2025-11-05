@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
 )
 
 from desktop.state import AppState
-from desktop.api_client import ApiClient
 
 
 class LoginWindow(QMainWindow):
@@ -25,6 +24,7 @@ class LoginWindow(QMainWindow):
         super().__init__(parent)
         self.setWindowTitle("CVVR Uploader - Login")
         self._state = AppState.load()
+        self.setFixedSize(420, 240)
 
         container = QWidget(self)
         self.setCentralWidget(container)
@@ -33,14 +33,14 @@ class LoginWindow(QMainWindow):
         form = QFormLayout()
         layout.addLayout(form)
 
-        self.server_url = QLineEdit(self._state.server_url)
-        self.server_url.setPlaceholderText("https://your-server:8000")
-        form.addRow("Server URL", self.server_url)
+        self.username = QLineEdit("")
+        self.username.setPlaceholderText("username")
+        form.addRow("Username", self.username)
 
-        self.api_token = QLineEdit(self._state.api_token)
-        self.api_token.setPlaceholderText("Optional API token")
-        self.api_token.setEchoMode(QLineEdit.Password)
-        form.addRow("API Token", self.api_token)
+        self.password = QLineEdit("")
+        self.password.setPlaceholderText("password")
+        self.password.setEchoMode(QLineEdit.Password)
+        form.addRow("Password", self.password)
 
         self.status_label = QLabel("")
         self.status_label.setAlignment(Qt.AlignLeft)
@@ -53,24 +53,28 @@ class LoginWindow(QMainWindow):
         layout.addStretch(1)
 
     def on_login_clicked(self) -> None:
-        url = (self.server_url.text() or "").strip()
-        token = (self.api_token.text() or "").strip()
-        if not url:
-            QMessageBox.warning(self, "Missing URL", "Please enter the server URL.")
+        # Hardcoded credentials for now
+        HARD_USER = "cvvr"
+        HARD_PASS = "cvvr123"
+
+        user = (self.username.text() or "").strip()
+        pwd = (self.password.text() or "").strip()
+        if not user or not pwd:
+            QMessageBox.warning(self, "Missing credentials", "Please enter username and password.")
             return
 
-        self.status_label.setText("Checking server...")
         self.save_btn.setEnabled(False)
         try:
-            state = AppState(server_url=url, api_token=token)
-            client = ApiClient(state)
-            _ = client.health()
-            state.save()
-            self.status_label.setText("OK")
-            self.login_success.emit()
-        except Exception as e:
-            self.status_label.setText("")
-            QMessageBox.critical(self, "Login failed", f"Could not reach server:\n{e}")
+            if user == HARD_USER and pwd == HARD_PASS:
+                # Persist default server URL so uploads work without asking
+                st = AppState.load()
+                if not st.server_url:
+                    st.server_url = "http://103.195.244.67:8000"
+                    st.save()
+                self.status_label.setText("Login successful")
+                self.login_success.emit()
+            else:
+                QMessageBox.critical(self, "Login failed", "Invalid username or password.")
         finally:
             self.save_btn.setEnabled(True)
 

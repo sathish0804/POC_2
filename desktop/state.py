@@ -23,7 +23,8 @@ def _config_path() -> str:
 
 @dataclass
 class AppState:
-    server_url: str = ""
+    # Default server URL so users are not asked at login
+    server_url: str = "http://103.195.244.67:8000"
     api_token: str = ""
 
     @classmethod

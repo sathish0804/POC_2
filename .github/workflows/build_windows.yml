@@ -34,7 +34,6 @@ jobs:
             --windowed `
             --noconfirm `
             --clean `
-            --add-data "desktop;desktop" `
             desktop/app.py
 
       - name: Upload artifact (.exe directory)

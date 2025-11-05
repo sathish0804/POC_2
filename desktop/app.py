@@ -7,6 +7,10 @@ from desktop.ui.login_view import LoginWindow
 from desktop.ui.upload_view import UploadWindow
 
 
+# Keep strong references to top-level windows to prevent GC closing them
+_WINDOWS: list = []
+
+
 def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("CVVR Uploader")
@@ -16,11 +20,13 @@ def main() -> int:
 
     def on_login_success() -> None:
         upload = UploadWindow()
+        _WINDOWS.append(upload)
         upload.show()
         login.close()
 
     login.login_success.connect(on_login_success)
     login.show()
+    _WINDOWS.append(login)
 
     return app.exec()
 

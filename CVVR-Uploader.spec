@@ -5,7 +5,7 @@ a = Analysis(
     ['desktop/app.py'],
     pathex=[],
     binaries=[],
-    datas=[('desktop', 'desktop')],
+    datas=[],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

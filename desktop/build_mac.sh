@@ -13,7 +13,6 @@ pyinstaller \
   --windowed \
   --noconfirm \
   --clean \
-  --add-data=desktop:desktop \
   desktop/app.py
 
 echo "Built app in dist/CVVR-Uploader.app"

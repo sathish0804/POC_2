@@ -13,7 +13,6 @@ pyinstaller `
   --windowed `
   --noconfirm `
   --clean `
-  --add-data=desktop;desktop `
   desktop/app.py
 
 Pop-Location
