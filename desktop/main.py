@@ -6,7 +6,7 @@ import multiprocessing as mp
 import faulthandler
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-# Ensure project root is on sys.path when running as `python desktop/app.py`
+# Ensure project root is on sys.path when running as `python desktop/main.py`
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
@@ -14,11 +14,11 @@ if PROJECT_ROOT not in sys.path:
 from desktop.ui.login_view import LoginWindow
 
 
-# Keep strong references to top-level windows to prevent GC closing them
 _WINDOWS: list = []
 
 
 def main() -> int:
+    # Stabilize Qt + multiprocessing on macOS/Linux
     try:
         mp.set_start_method("spawn", force=True)
     except RuntimeError:
@@ -30,12 +30,10 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("CVVR Uploader")
 
-    # Always show login first (native window, no browser)
     login = LoginWindow()
 
     def on_login_success() -> None:
         try:
-            # Lazy import to avoid heavy module loading before login
             from desktop.ui.upload_view import UploadWindow  # type: ignore
             upload = UploadWindow()
             _WINDOWS.append(upload)

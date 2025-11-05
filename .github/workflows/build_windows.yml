@@ -35,7 +35,7 @@ jobs:
             --noconfirm `
             --clean `
             --add-data "yolo11s.pt;." `
-            desktop/app.py
+            desktop/main.py
 
       - name: Upload artifact (.exe directory)
         uses: actions/upload-artifact@v4

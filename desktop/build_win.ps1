@@ -14,7 +14,7 @@ pyinstaller `
   --noconfirm `
   --clean `
   --add-data "yolo11s.pt;." `
-  desktop/app.py
+  desktop/main.py
 
 Pop-Location
 Pop-Location
