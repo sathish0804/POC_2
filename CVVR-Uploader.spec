@@ -14,7 +14,7 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
-    ['desktop/main.py'],
+    ['desktop\\main.py'],
     pathex=[],
     binaries=binaries,
     datas=datas,
@@ -53,10 +53,4 @@ coll = COLLECT(
     upx=True,
     upx_exclude=[],
     name='CVVR-Uploader',
-)
-app = BUNDLE(
-    coll,
-    name='CVVR-Uploader.app',
-    icon=None,
-    bundle_identifier=None,
 )
