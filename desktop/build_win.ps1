@@ -15,7 +15,7 @@ pyinstaller `
   --clean `
   --add-data "yolo11s.pt;." `
   --collect-all mediapipe `
-  --collect-data mediapipe `  
+  --collect-data mediapipe `
   --collect-binaries mediapipe `
   --hidden-import=mediapipe.python._framework_bindings `
   --hidden-import=_ssl `
