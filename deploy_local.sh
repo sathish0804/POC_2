@@ -25,7 +25,7 @@ APP_DIR="/opt/poc2"
 if command -v apt-get >/dev/null 2>&1; then
   apt-get update || true
   DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    python3-venv python3-dev build-essential \
+    python3.12 python3.12-venv python3.12-dev build-essential \
     libgl1-mesa-glx libglib2.0-0 libjpeg-dev zlib1g-dev \
     tesseract-ocr ffmpeg
 elif command -v yum >/dev/null 2>&1; then
@@ -35,22 +35,73 @@ fi
 
 mkdir -p "$APP_DIR"
 
-python3 -m venv "$APP_DIR/venv"
+python3.12 -m venv "$APP_DIR/venv"
 "$APP_DIR/venv/bin/pip" install --upgrade pip setuptools wheel
 
 # Nuke any OpenCV variants first
 "$APP_DIR/venv/bin/pip" uninstall -y opencv-python opencv-contrib-python opencv-python-headless || true
 
-# Split requirements into base vs ml
-grep -viE '^(torch|torchvision|tensorflow|jax|jaxlib|keras)(==.*)?$' "$APP_DIR/requirements.txt" > "$APP_DIR/requirements.base.txt"
+# Split requirements into base vs ML/OpenCV using Python to avoid locale/encoding issues
+"$APP_DIR/venv/bin/python" - "$APP_DIR" <<'PY'
+import sys, re, codecs
+src = f"{sys.argv[1]}/requirements.txt"
+dst = f"{sys.argv[1]}/requirements.base.txt"
+skip_re = re.compile(r'^(torch|torchvision|tensorflow|jax|jaxlib|keras|opencv.*)\b', re.IGNORECASE)
+raw = open(src, 'rb').read()
+def decode_bytes(b: bytes) -> str:
+    # Detect UTF-16 by BOM or presence of many NUL bytes
+    if b.startswith(codecs.BOM_UTF16_LE) or b.startswith(codecs.BOM_UTF16_BE) or b.count(b'\x00') > 0:
+        try:
+            return b.decode('utf-16')
+        except Exception:
+            pass
+    try:
+        return b.decode('utf-8')
+    except Exception:
+        return b.decode('latin-1', 'ignore')
+text = decode_bytes(raw)
+lines = text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
+with open(dst, 'w', encoding='utf-8', newline='\n') as out:
+    for line in lines:
+        s = line.strip()
+        if not s or s.startswith('#') or skip_re.match(s):
+            continue
+        out.write(s + '\n')
+print(dst)
+PY
 "$APP_DIR/venv/bin/pip" install -r "$APP_DIR/requirements.base.txt"
 
 # Force headless OpenCV to avoid X11/GL issues
 "$APP_DIR/venv/bin/pip" install opencv-contrib-python-headless==4.11.0.86
 
 # Install CPU-only PyTorch/torchvision via official CPU index, matching pinned versions
-TORCH_VER=$(awk -F'==' 'tolower($1)=="torch" {print $2}' "$APP_DIR/requirements.txt" | tail -n1)
-TV_VER=$(awk -F'==' 'tolower($1)=="torchvision" {print $2}' "$APP_DIR/requirements.txt" | tail -n1)
+eval $("$APP_DIR/venv/bin/python" - "$APP_DIR/requirements.txt" <<'PY'
+import sys, codecs
+raw = open(sys.argv[1], 'rb').read()
+def decode_bytes(b: bytes) -> str:
+    if b.startswith(codecs.BOM_UTF16_LE) or b.startswith(codecs.BOM_UTF16_BE) or b.count(b'\x00') > 0:
+        try:
+            return b.decode('utf-16')
+        except Exception:
+            pass
+    try:
+        return b.decode('utf-8')
+    except Exception:
+        return b.decode('latin-1', 'ignore')
+text = decode_bytes(raw).replace('\r\n','\n').replace('\r','\n').split('\n')
+def find(name):
+    name = name.lower()
+    for line in text:
+        s = line.strip()
+        if s.lower().startswith(name + '=='):
+            return s.split('==',1)[1].strip()
+    return ''
+torch_ver = find('torch')
+tv_ver = find('torchvision')
+print(f"TORCH_VER={torch_ver}")
+print(f"TV_VER={tv_ver}")
+PY
+)
 CPU_IDX="--index-url https://download.pytorch.org/whl/cpu"
 if [ -n "${TORCH_VER:-}" ] && [ -n "${TV_VER:-}" ]; then
   "$APP_DIR/venv/bin/pip" install $CPU_IDX torch=="$TORCH_VER" torchvision=="$TV_VER"
@@ -63,8 +114,14 @@ fi
 
 # Quick smoke test to fail fast with a readable error
 cat > "$APP_DIR/_import_check.py" <<'PY'
-import cv2, numpy as np
-print("cv2 ok:", cv2.__version__)
+import sys
+import numpy as np
+try:
+    import cv2
+    print("cv2 ok:", getattr(cv2, "__version__", "unknown"), "file:", getattr(cv2, "__file__", "n/a"))
+except Exception as e:
+    print("cv2 import failed:", repr(e))
+    raise
 import torch, torchvision
 print("torch ok:", torch.__version__, "cuda?", torch.cuda.is_available())
 try:

@@ -79,6 +79,7 @@ class ActivityPipeline:
     sleep_cfg_hold_transition_s: float = 1.0
     sleep_cfg_recovery_hold_s: float = 2.0
     sleep_cfg_open_prob_closed_thresh: float = 0.45
+    # Baseline head-down angle (no-eye posture path)
     sleep_cfg_no_eye_head_down_deg: float = 32.0
     # Phone inference robustness
     phone_hand_iou_min_frac: float = 0.15
@@ -110,6 +111,10 @@ class ActivityPipeline:
     bg_alpha: float = 0.05
     bg_thresh: int = 18
     group_consensus_frames: int = 3
+    # Flag temporal gating
+    flag_consensus_frames: int = 2
+    flag_window_s: float = 3.5
+    flag_cooldown_s: float = 6.0
 
     def _map_activity_label(self, label: str) -> Tuple[int, str]:
         key = (label or "").strip().lower()
@@ -539,26 +544,102 @@ class ActivityPipeline:
                                 break
 
                 if green_flags:
+                    # Precompute hand points in crop coords and a coarse arm extension cue
+                    hand_pts_xy = []
+                    for _h in hands_list:
+                        for _p in _h.values():
+                            try:
+                                hand_pts_xy.append((float(_p.get("x", 0.0)), float(_p.get("y", 0.0))))
+                            except Exception:
+                                pass
+                    arm_extended = False
+                    try:
+                        if pose_res and getattr(pose_res, 'pose_landmarks', None):
+                            lm = pose_res.pose_landmarks.landmark
+                            rsx, rsy = lm[12].x * frame_bgr.shape[1], lm[12].y * frame_bgr.shape[0]
+                            rwx, rwy = lm[16].x * frame_bgr.shape[1], lm[16].y * frame_bgr.shape[0]
+                            if (x1 <= rsx <= x2 and y1 <= rsy <= y2 and x1 <= rwx <= x2 and y1 <= rwy <= y2):
+                                ext = ((rwx - rsx) ** 2 + (rwy - rsy) ** 2) ** 0.5
+                                arm_extended = (ext >= 0.35 * max(1.0, float(x2 - x1))) and ((rwx - rsx) > 0)
+                    except Exception:
+                        arm_extended = False
                     for (fx1, fy1, fx2, fy2) in green_flags:
-                        if iou(pb, (fx1, fy1, fx2, fy2)) <= 0.0:
+                        # Accept flags that overlap the person OR are very close to the person box (arm outside window)
+                        pbx1, pby1, pbx2, pby2 = pb
+                        iou_pf = iou(pb, (fx1, fy1, fx2, fy2))
+                        dx = 0 if (pbx1 <= fx2 and fx1 <= pbx2) else min(abs(fx1 - pbx2), abs(pbx1 - fx2))
+                        dy = 0 if (pby1 <= fy2 and fy1 <= pby2) else min(abs(fy1 - pby2), abs(pby1 - fy2))
+                        manhattan_gap = dx + dy
+                        if iou_pf <= 0.0 and (manhattan_gap > 40.0 and not arm_extended):
                             continue
+                        # Stronger window gating: require meaningful IoU and flag center inside a window
                         if window_regions:
-                            overlaps_window = any(iou((fx1, fy1, fx2, fy2), w) > 0.05 for w in window_regions)
-                            if not overlaps_window:
+                            best_w = None
+                            best_iou = 0.0
+                            for w in window_regions:
+                                _iou = iou((fx1, fy1, fx2, fy2), w)
+                                if _iou > best_iou:
+                                    best_iou = _iou; best_w = w
+                            cx = (fx1 + fx2) / 2.0; cy = (fy1 + fy2) / 2.0
+                            allow_win = False
+                            if best_w is not None:
+                                wx1, wy1, wx2, wy2 = best_w
+                                # Expand window slightly to cover cropping errors
+                                pad_x = 0.05 * max(1.0, (wx2 - wx1))
+                                pad_y = 0.05 * max(1.0, (wy2 - wy1))
+                                ex1, ey1 = max(0.0, wx1 - pad_x), max(0.0, wy1 - pad_y)
+                                ex2, ey2 = min(frame_bgr.shape[1] - 1.0, wx2 + pad_x), min(frame_bgr.shape[0] - 1.0, wy2 + pad_y)
+                                allow_win = (best_iou >= 0.08) or (ex1 <= cx <= ex2 and ey1 <= cy <= ey2)
+                            # Also allow if near right edge (window missed)
+                            near_right_edge = (fx2 >= 0.85 * frame_bgr.shape[1])
+                            if not (allow_win or near_right_edge):
                                 continue
+                        # Quick acceptance: if arm is clearly extended toward window and flag is close-by, accept
+                        if arm_extended and (allow_win or near_right_edge) and manhattan_gap <= 80.0:
+                            per_frame_activities.append({
+                                "person_id": pid,
+                                "person_bbox": [x1, y1, x2, y2],
+                                "object": "signal exchange with flag",
+                                "object_bbox": [fx1, fy1, fx2, fy2],
+                                "holding": True,
+                                "evidence": {"rule": "arm_extended_window"},
+                                "track_id": track_id,
+                            })
+                            flag_interaction_emitted = True
+                            break
+                        # Require strong hand–flag interaction and that flag is on the right side of the person (toward window)
                         fcx1, fcy1, fcx2, fcy2 = fx1 - x1, fy1 - y1, fx2 - x1, fy2 - y1
+                        flag_area = max(1.0, float((fcx2 - fcx1) * (fcy2 - fcy1)))
+                        # Right-side bias relative to person box
+                        person_w = float(x2 - x1)
+                        flag_cx = (fx1 + fx2) / 2.0
+                        right_side = flag_cx >= (x1 + 0.6 * max(1.0, person_w))
                         for hb in hand_boxes_crop:
                             hx1, hy1, hx2, hy2 = hb
                             ix1, iy1 = max(hx1, fcx1), max(hy1, fcy1)
                             ix2, iy2 = min(hx2, fcx2), min(hy2, fcy2)
-                            if (ix2 - ix1) > 0 and (iy2 - iy1) > 0:
+                            inter_area = max(0.0, (ix2 - ix1)) * max(0.0, (iy2 - iy1))
+                            # Also count raw hand landmark points inside flag, or near the flag when arm is extended
+                            hand_pts_inside = 0
+                            min_l1 = 1e9
+                            for (px, py) in hand_pts_xy:
+                                if fcx1 <= px <= fcx2 and fcy1 <= py <= fcy2:
+                                    hand_pts_inside += 1
+                                # L1 distance to rectangle (0 if inside)
+                                dx = 0.0 if fcx1 <= px <= fcx2 else min(abs(px - fcx1), abs(px - fcx2))
+                                dy = 0.0 if fcy1 <= py <= fcy2 else min(abs(py - fcy1), abs(py - fcy2))
+                                d = dx + dy
+                                if d < min_l1:
+                                    min_l1 = d
+                            close_hand = (min_l1 <= 30.0) and arm_extended
+                            if right_side and flag_area > 0 and ((inter_area / flag_area) >= 0.06 or hand_pts_inside >= 6 or close_hand):
                                 per_frame_activities.append({
                                     "person_id": pid,
                                     "person_bbox": [x1, y1, x2, y2],
                                     "object": "signal exchange with flag",
                                     "object_bbox": [fx1, fy1, fx2, fy2],
                                     "holding": True,
-                                    "evidence": {"rule": "green_flag_hand_intersection_window"},
+                                    "evidence": {"rule": "green_flag_hand_frac_window_strict"},
                                     "track_id": track_id,
                                 })
                                 flag_interaction_emitted = True
@@ -766,19 +847,72 @@ class ActivityPipeline:
                                     "track_id": track_id,
                                 })
                         else:
-                            per_frame_activities.append({
-                                "person_id": pid,
-                                "person_bbox": [x1, y1, x2, y2],
-                                "object": activity_label,
-                                "object_bbox": None,
-                                "holding": False,
-                                "evidence": {"rule": emitted.get("evidence_rule")},
-                                "event_start_ts": emitted.get("event_start_ts"),
-                                "event_end_ts": emitted.get("event_end_ts"),
-                                "track_id": track_id,
-                            })
+                            # For posture-only 'sleep', gate by confidence AND context (pitch & motion)
+                            rule = str(emitted.get("rule", ""))
+                            conf = float(emitted.get("confidence", 0.0))
+                            if rule == "posture_path":
+                                pitch_deg = None
+                                motion_sw = None
+                                try:
+                                    pitch_deg = float(debug_info.get("pitch_deg_smoothed")) if debug_info and debug_info.get("pitch_deg_smoothed") is not None else None
+                                except Exception:
+                                    pitch_deg = None
+                                try:
+                                    motion_sw = float(debug_info.get("motion_sw")) if debug_info and debug_info.get("motion_sw") is not None else None
+                                except Exception:
+                                    motion_sw = None
+                                base_deg = float(self.sleep_cfg_no_eye_head_down_deg)
+                                # Treat "very down" as moderately above the base threshold to catch 35–40° range
+                                very_down = (pitch_deg is not None) and (pitch_deg >= base_deg + 3.0)
+                                # Keep a strict stillness requirement to curb false positives from casual looking-down
+                                still_enough = (motion_sw is not None) and (motion_sw <= 16.0)
+                                # Relax posture-only gating to allow confident, still posture near the base threshold
+                                allow = (
+                                    (conf >= 0.70 and still_enough and (pitch_deg is not None) and (pitch_deg >= base_deg))
+                                    or (conf >= 0.75 and very_down)
+                                )
+                                if allow and not engaged:
+                                    per_frame_activities.append({
+                                        "person_id": pid,
+                                        "person_bbox": [x1, y1, x2, y2],
+                                        "object": activity_label,
+                                        "object_bbox": None,
+                                        "holding": False,
+                                        "evidence": {"rule": emitted.get("evidence_rule")},
+                                        "event_start_ts": emitted.get("event_start_ts"),
+                                        "event_end_ts": emitted.get("event_end_ts"),
+                                        "track_id": track_id,
+                                    })
+                            else:
+                                per_frame_activities.append({
+                                    "person_id": pid,
+                                    "person_bbox": [x1, y1, x2, y2],
+                                    "object": activity_label,
+                                    "object_bbox": None,
+                                    "holding": False,
+                                    "evidence": {"rule": emitted.get("evidence_rule")},
+                                    "event_start_ts": emitted.get("event_start_ts"),
+                                    "event_end_ts": emitted.get("event_end_ts"),
+                                    "track_id": track_id,
+                                })
                     else:
+                        # Fallback: only tag state-held sleep if context is strong
                         if debug_info and debug_info.get("state") == "sleep":
+                            pitch_deg = None
+                            motion_sw = None
+                            perclos_mw = None
+                            try:
+                                pitch_deg = float(debug_info.get("pitch_deg_smoothed")) if debug_info.get("pitch_deg_smoothed") is not None else None
+                            except Exception:
+                                pitch_deg = None
+                            try:
+                                motion_sw = float(debug_info.get("motion_sw")) if debug_info.get("motion_sw") is not None else None
+                            except Exception:
+                                motion_sw = None
+                            try:
+                                perclos_mw = float(debug_info.get("perclos_mw")) if debug_info.get("perclos_mw") is not None else None
+                            except Exception:
+                                perclos_mw = None
                             per_frame_activities.append({
                                 "person_id": pid,
                                 "person_bbox": [x1, y1, x2, y2],
@@ -1430,26 +1564,97 @@ class ActivityPipeline:
                                         break
 
                         if green_flags:
+                            # Precompute hand points in crop coords and a coarse arm extension cue
+                            hand_pts_xy = []
+                            for _h in hands_list:
+                                for _p in _h.values():
+                                    try:
+                                        hand_pts_xy.append((float(_p.get("x", 0.0)), float(_p.get("y", 0.0))))
+                                    except Exception:
+                                        pass
+                            arm_extended = False
+                            try:
+                                if pose_res and getattr(pose_res, 'pose_landmarks', None):
+                                    lm = pose_res.pose_landmarks.landmark
+                                    rsx, rsy = lm[12].x * frame_bgr.shape[1], lm[12].y * frame_bgr.shape[0]
+                                    rwx, rwy = lm[16].x * frame_bgr.shape[1], lm[16].y * frame_bgr.shape[0]
+                                    if (x1 <= rsx <= x2 and y1 <= rsy <= y2 and x1 <= rwx <= x2 and y1 <= rwy <= y2):
+                                        ext = ((rwx - rsx) ** 2 + (rwy - rsy) ** 2) ** 0.5
+                                        arm_extended = (ext >= 0.35 * max(1.0, float(x2 - x1))) and ((rwx - rsx) > 0)
+                            except Exception:
+                                arm_extended = False
                             for (fx1, fy1, fx2, fy2) in green_flags:
-                                if iou(pb, (fx1, fy1, fx2, fy2)) <= 0.0:
+                                # Accept flags that overlap the person OR are very close to the person box (arm outside window)
+                                pbx1, pby1, pbx2, pby2 = pb
+                                iou_pf = iou(pb, (fx1, fy1, fx2, fy2))
+                                dx = 0 if (pbx1 <= fx2 and fx1 <= pbx2) else min(abs(fx1 - pbx2), abs(pbx1 - fx2))
+                                dy = 0 if (pby1 <= fy2 and fy1 <= pby2) else min(abs(fy1 - pby2), abs(pby1 - fy2))
+                                manhattan_gap = dx + dy
+                                if iou_pf <= 0.0 and (manhattan_gap > 40.0 and not arm_extended):
                                     continue
+                                # Stronger window gating
                                 if window_regions:
-                                    overlaps_window = any(iou((fx1, fy1, fx2, fy2), w) > 0.05 for w in window_regions)
-                                    if not overlaps_window:
+                                    best_w = None
+                                    best_iou = 0.0
+                                    for w in window_regions:
+                                        _iou = iou((fx1, fy1, fx2, fy2), w)
+                                        if _iou > best_iou:
+                                            best_iou = _iou; best_w = w
+                                    cx = (fx1 + fx2) / 2.0; cy = (fy1 + fy2) / 2.0
+                                    allow_win = False
+                                    if best_w is not None:
+                                        wx1, wy1, wx2, wy2 = best_w
+                                        pad_x = 0.05 * max(1.0, (wx2 - wx1))
+                                        pad_y = 0.05 * max(1.0, (wy2 - wy1))
+                                        ex1, ey1 = max(0.0, wx1 - pad_x), max(0.0, wy1 - pad_y)
+                                        ex2, ey2 = min(frame_bgr.shape[1] - 1.0, wx2 + pad_x), min(frame_bgr.shape[0] - 1.0, wy2 + pad_y)
+                                        allow_win = (best_iou >= 0.08) or (ex1 <= cx <= ex2 and ey1 <= cy <= ey2)
+                                    near_right_edge = (fx2 >= 0.85 * frame_bgr.shape[1])
+                                    if not (allow_win or near_right_edge):
                                         continue
+                                # Quick acceptance: if arm is clearly extended toward window and flag is close-by, accept
+                                if arm_extended and (allow_win or near_right_edge) and manhattan_gap <= 80.0:
+                                    per_frame_activities.append({
+                                        "person_id": pid,
+                                        "person_bbox": [x1, y1, x2, y2],
+                                        "object": "signal exchange with flag",
+                                        "object_bbox": [fx1, fy1, fx2, fy2],
+                                        "holding": True,
+                                        "evidence": {"rule": "arm_extended_window"},
+                                        "track_id": track_id,
+                                    })
+                                    flag_interaction_emitted = True
+                                    break
+                                # Require strong hand–flag interaction and that flag is on the right side of the person
                                 fcx1, fcy1, fcx2, fcy2 = fx1 - x1, fy1 - y1, fx2 - x1, fy2 - y1
+                                flag_area = max(1.0, float((fcx2 - fcx1) * (fcy2 - fcy1)))
+                                person_w = float(x2 - x1)
+                                flag_cx = (fx1 + fx2) / 2.0
+                                right_side = flag_cx >= (x1 + 0.6 * max(1.0, person_w))
                                 for hb in hand_boxes_crop:
                                     hx1, hy1, hx2, hy2 = hb
                                     ix1, iy1 = max(hx1, fcx1), max(hy1, fcy1)
                                     ix2, iy2 = min(hx2, fcx2), min(hy2, fcy2)
-                                    if (ix2 - ix1) > 0 and (iy2 - iy1) > 0:
+                                    inter_area = max(0.0, (ix2 - ix1)) * max(0.0, (iy2 - iy1))
+                                    hand_pts_inside = 0
+                                    min_l1 = 1e9
+                                    for (px, py) in hand_pts_xy:
+                                        if fcx1 <= px <= fcx2 and fcy1 <= py <= fcy2:
+                                            hand_pts_inside += 1
+                                        dx = 0.0 if fcx1 <= px <= fcx2 else min(abs(px - fcx1), abs(px - fcx2))
+                                        dy = 0.0 if fcy1 <= py <= fcy2 else min(abs(py - fcy1), abs(py - fcy2))
+                                        d = dx + dy
+                                        if d < min_l1:
+                                            min_l1 = d
+                                    close_hand = (min_l1 <= 30.0) and arm_extended
+                                    if right_side and flag_area > 0 and ((inter_area / flag_area) >= 0.06 or hand_pts_inside >= 6 or close_hand):
                                         per_frame_activities.append({
                                             "person_id": pid,
                                             "person_bbox": [x1, y1, x2, y2],
                                             "object": "signal exchange with flag",
                                             "object_bbox": [fx1, fy1, fx2, fy2],
                                             "holding": True,
-                                            "evidence": {"rule": "green_flag_hand_intersection_window"},
+                                            "evidence": {"rule": "green_flag_hand_frac_window_strict"},
                                             "track_id": track_id,
                                         })
                                         flag_interaction_emitted = True
@@ -1835,6 +2040,9 @@ class ActivityPipeline:
                     def _map_activity(label: str) -> Tuple[int, str]:
                         return self._map_activity_label(label)
 
+                    # Initialize flag consensus state store
+                    if not hasattr(self, "_flag_state"):
+                        self._flag_state = {}
                     for act in per_frame_activities:
                         try:
                             ev_tmp = act.get("evidence") or {}
@@ -1843,6 +2051,31 @@ class ActivityPipeline:
                         except Exception:
                             pass
                         obj = str(act.get("object", "")).lower()
+                        # Temporal consensus + cooldown for flag events
+                        if obj == "signal exchange with flag":
+                            try:
+                                tid = int(act.get("track_id", -1))
+                            except Exception:
+                                tid = -1
+                            st = self._flag_state.get(tid, {"hold_start": None, "count": 0, "last_emit": None})
+                            last_emit = st.get("last_emit")
+                            if last_emit is not None and (float(ts) - float(last_emit)) < float(self.flag_cooldown_s):
+                                # still in cooldown → skip this frame's flag event
+                                continue
+                            hs = st.get("hold_start")
+                            if hs is None or (float(ts) - float(hs)) > float(self.flag_window_s):
+                                st["hold_start"] = float(ts)
+                                st["count"] = 1
+                            else:
+                                st["count"] = int(st.get("count", 0)) + 1
+                            if st["count"] < int(self.flag_consensus_frames):
+                                self._flag_state[tid] = st
+                                continue
+                            else:
+                                st["last_emit"] = float(ts)
+                                st["hold_start"] = None
+                                st["count"] = 0
+                                self._flag_state[tid] = st
                         activity_type, des = _map_activity(obj)
                         if obj in ("more than two people", "more_than_two_people", "group"):
                             try:

@@ -47,7 +47,7 @@ class SleepDecisionConfigV2:
     posture_micro_hold_s: float = 3.5
 
     # No-eye fallback
-    no_eye_pitch_drowsy_deg: float = 42.0
+    no_eye_pitch_drowsy_deg: float = 35.0
     no_eye_pitch_sleep_deg: float = 45.0
     no_eye_min_still_s: float = 3.0
 
@@ -347,7 +347,16 @@ class SleepDecisionMachineV2:
                     sleep_eye = True
                 elif st.get("closed_run_s", 0.0) >= max(8.0, self.cfg.microsleep_min_s + 6.0):
                     sleep_eye = True
-            sleep_any = sleep_eye or sleep_posture
+            # Prefer stillness for posture-only escalation, but if the head is
+            # significantly beyond the sleep pitch threshold, allow escalation
+            # even with mild motion (camera jitter etc.).
+            high_pitch_override = False
+            if not eye_rel and pitch_s is not None:
+                try:
+                    high_pitch_override = pitch_s >= (self.cfg.no_eye_pitch_sleep_deg + 12.0)
+                except Exception:
+                    high_pitch_override = False
+            sleep_any = sleep_eye or (sleep_posture and (still or high_pitch_override))
             if sleep_any:
                 start_hold("esc_hold_start")
                 if passed("esc_hold_start", self.cfg.hold_escalate_s):
@@ -559,7 +568,11 @@ class SleepDecisionMachine:
             hold_recover_s=cfg.recovery_hold_s,
             # Map single legacy no-eye pitch to a conservative pair in V2
             no_eye_pitch_drowsy_deg=cfg.no_eye_head_down_deg,
-            no_eye_pitch_sleep_deg=max(cfg.no_eye_head_down_deg, 40.0),
+            # Require posture-only sleep at least 5° deeper than drowsy, but allow below 40°
+            # Lower the posture-only sleep threshold so moderate head-down (≈33°)
+            # can be recognized when eye signals are unavailable. We keep a
+            # small gap above the drowsy threshold and a conservative floor.
+            no_eye_pitch_sleep_deg=max(cfg.no_eye_head_down_deg + 3.0, 32.0),
         )
         self._impl = SleepDecisionMachineV2(v2cfg)
         logger.debug("[SleepDecisionMachine] adapter initialized")
