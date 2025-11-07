@@ -999,7 +999,7 @@ class ActivityPipeline:
                 clip_filename = None
                 try:
                     out_dir = os.path.join(os.path.dirname(video_path), "output")
-                    clip_filename = extract_clip(video_path, float(ts), out_dir, tag_base, duration_s=4.0)
+                    clip_filename = extract_clip(video_path, float(ts), out_dir, tag_base, duration_s=6.0)
                 except Exception:
                     clip_filename = None
 
@@ -1060,6 +1060,17 @@ class ActivityPipeline:
                 if _end_ts <= _start_ts:
                     _end_ts = _start_ts + 4.0
                 activity_type, des = self._map_activity_label(str(ev.get("activity", "sleep")))
+
+                # Create a short clip for finalized sleep episodes as well
+                clip_filename = None
+                try:
+                    out_dir = os.path.join(os.path.dirname(video_path), "output")
+                    center_ts = (float(_start_ts) + float(_end_ts)) / 2.0
+                    tag_base = f"event_{center_ts:.2f}s"
+                    clip_filename = extract_clip(video_path, float(center_ts), out_dir, tag_base, duration_s=6.0)
+                except Exception:
+                    clip_filename = None
+
                 event = ActivityEvent(
                     tripId=self.trip_id,
                     activityType=activity_type,
@@ -1078,7 +1089,7 @@ class ActivityPipeline:
                     peopleCount=None,
                     evidence={"rule": ev.get("rule", "finalize")},
                     activityImage=None,
-                    activityClip=None,
+                    activityClip=clip_filename,
                 )
                 events.append(event)
         logger.info(f"[Pipeline] Processed {processed} sampled frames from {filename} (sample_fps={self.sample_fps}, duration={file_duration})")
@@ -1844,7 +1855,7 @@ class ActivityPipeline:
                         clip_filename = None
                         try:
                             out_dir = os.path.join(os.path.dirname(video_path), "output")
-                            clip_filename = extract_clip(video_path, float(ts), out_dir, tag_base, duration_s=4.0)
+                            clip_filename = extract_clip(video_path, float(ts), out_dir, tag_base, duration_s=6.0)
                         except Exception:
                             clip_filename = None
 
@@ -1927,6 +1938,17 @@ class ActivityPipeline:
                 if _end_ts <= _start_ts:
                     _end_ts = _start_ts + 4.0
                 activity_type, des = self._map_activity_label(str(ev.get("activity", "sleep")))
+
+                # Create a short clip for finalized sleep episodes as well
+                clip_filename = None
+                try:
+                    out_dir = os.path.join(os.path.dirname(video_path), "output")
+                    center_ts = (float(_start_ts) + float(_end_ts)) / 2.0
+                    tag_base = f"event_{center_ts:.2f}s"
+                    clip_filename = extract_clip(video_path, float(center_ts), out_dir, tag_base, duration_s=6.0)
+                except Exception:
+                    clip_filename = None
+
                 event = ActivityEvent(
                     tripId=self.trip_id,
                     activityType=activity_type,
@@ -1945,7 +1967,7 @@ class ActivityPipeline:
                     peopleCount=None,
                     evidence={"rule": ev.get("rule", "finalize")},
                     activityImage=None,
-                    activityClip=None,
+                    activityClip=clip_filename,
                 )
                 events.append(event)
         logger.info(f"[Pipeline:Range] Processed {processed} sampled frames from {filename} in range [{start_frame}, {end_frame})")

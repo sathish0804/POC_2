@@ -3,8 +3,7 @@ ssh root@103.195.244.67
 
 systemctl restart poc2
 
- journalctl -u poc2 -f
-
+journalctl -u poc2 -f
 
 SSH_PASS='Login@123@@@' /Users/satishvanga/Documents/Vanga/POC_2/deploy_local.sh
 

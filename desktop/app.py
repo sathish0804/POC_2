@@ -36,10 +36,10 @@ def main() -> int:
     def on_login_success() -> None:
         try:
             # Lazy import to avoid heavy module loading before login
-            from desktop.ui.upload_view import UploadWindow  # type: ignore
-            upload = UploadWindow()
-            _WINDOWS.append(upload)
-            upload.show()
+            from desktop.ui.trips_view import TripsWindow  # type: ignore
+            trips = TripsWindow()
+            _WINDOWS.append(trips)
+            trips.show()
             login.close()
         except Exception as e:
             QMessageBox.critical(None, "Startup error", f"Failed to open Upload screen:\n{e}")
